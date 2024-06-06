@@ -1,0 +1,170 @@
+\documentclass{article}
+
+
+\usepackage{microtype}
+\usepackage{charter}
+\usepackage[charter]{mathdesign}
+
+\usepackage{tikz}
+\usetikzlibrary{external}
+\usetikzlibrary{positioning, shapes, fit, 3d, perspective, shadings}
+
+\input{math_commands}
+\newcommand\layernorm{\mathrm{layernorm}}
+\newcommand\standardize{\mathrm{standardize}}
+\newcommand\logits{\mathrm{logits}}
+\newcommand\diag{\mathrm{diag}}
+
+\author{Matthew Finlayson}
+\title{Taking API-Protected Language Model Attacks One Layer Deeper}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+  To protect trade secrets, 
+  language model (LM) providers often limit access to their models
+  by exposing them only via a restrictive API.
+  Recent work showed that under certain common configurations 
+  these APIs leak non-public information 
+  about their underlying LM architectures,
+  such as the model's embedding size.
+  The core observation that makes these attacks possible
+  is that the final layer of the LM imposes linear constraints
+  on the model outputs.
+  However, the attack methods proposed thus far reveal only limited information 
+  about the final layer.
+  For instance, they reveal the LM's output space,
+  but not the actual parameters of the output layer.
+  This paper introduces a method 
+  for exposing additional information about the LM output layer,
+  in particular finding the singular values (scaling factors),
+  rotation, and bias term of the model's final affine transformation.
+  This is accomplished by observing the constraints 
+  imposed by the penultimate layer of the model, i.e., the layernorm.
+  In particular, the layernorm constrains the model outputs to an ellipsoid.
+  The additional information gained from this attack unlocks several capabilities,
+  including recovering correctly-scaled model activations,
+  bounding the magnitude of the model parameters,
+  bounding the probability that the model can put on specific tokens,
+  and more accurately anticipating LM sampling errors.
+  Each of these capabilities in turn have many potential downstream use cases.
+  Thus this one-layer-deeper API LM attack 
+  constitutes an significant result in the field of LM API security.
+\end{abstract}
+
+\section{Finding the scale and bias of the final layer}
+
+\begin{figure}
+  \centering
+  \small
+  \input{fig/arch}
+  \caption{
+    A typical language model uses a layernorm layer followed by a linear projection to obtain logits.
+    Equivalently, these operations can be viewed as standardization followed by an affine transformation which can be uniquely decomposed further into rotations and scaling operations.
+  }
+\end{figure}
+
+Toward our goal of extracting information about the LM's internals,
+we will begin by deriving an equivalent reformulation 
+of a typical LM's final set of operations.
+The purpose of this reformulation is to separate out components 
+that we will be able to recover form those that we will not.
+The final two output layers of an LM are a layernorm
+\[\layernorm(\vx)=\frac{\vx-\E[\vx]}{\sqrt{\Var(\vx)}}\gamma + \beta,\]
+followed by a multiplication by the embedding matrix~\(\mW\). 
+In other words, given an embedding~\(\vx\)
+the model logits are \(\logits(\vx)=\mW\layernorm(\vx).\)
+However, the logits can be equivalently viewed as a standardization
+\[\standardize(\vx)=\frac{\vx-\E[\vx]}{\sqrt{\Var(\vx)}}\]
+followed by an affine transformation, i.e.,
+\(\logits(\vx)=\mW\diag(\gamma)\standardize(\vx) + \mW\beta.\)
+Finally, using singular value decomposition (SVD),
+there is some rotation~\(\mU\in\R^{v\times v}\),
+scale~\(\Sigma\in\R^{v\times d}\) 
+(a diagonal matrix with positive entries in descending order, known as the \emph{singular values}),
+and second rotation~\(\mV\in\R^{d\times d}\)
+such that \(\mU\Sigma\mV^\top=\mW\diag(\gamma)\).
+This decomposition is \emph{almost} unique,
+up to the ordering of equal scaling factors and their associated rotations.
+For the purposes of this paper, consider it to be unique.
+Therefore we have that 
+\[\logits(\vx)=\mU\Sigma\mV\standardize(\vx)+\mW\beta.\]
+This reformulation is an unique decomposition of the model's final layer.
+
+\begin{figure}
+  \centering
+  \small
+  \input{fig/standardize}
+  \caption{The standardize function's output is restrited to the intersection of a plane and a sphere (indicated with a thick ring).}
+  \label{fig:standardize}
+\end{figure}
+
+I will next demonstrate how we can recover the parameters of \(\Sigma\), 
+\(\vb=\mW\beta\), and the magnitudes of the entries of \(\mU\)
+by using the properties of the standardize function.
+The co-domain of the standardize function
+is the set of vectors with mean 0 and variance 1,
+or in other words the vectors~\(\vx\) such that 
+\[\sum_i^dx_i=0\quad\text{and}\quad \sum_i^dx_i^2=d.\]
+This space corresponds to the intersection of a hypersphere of radius~\(\sqrt{d}\)
+and the hyperplane perpendicular to the all-ones vector.
+This intersection forms a (\(d-1\))-dimensional hypersphere,
+as demonstrated in Figure~\ref{fig:standardize}.
+
+\begin{figure}
+  \centering
+  \input{fig/affine}
+  \caption{
+    An ellipsoid is a sphere~(1) that has undergone an affine transformaton, in other words, a scale~(2), rotation~(3), and translation~(4).
+    Since the outputs of the standardize function lie on a sphere
+    and undergo an affine transformation to obtain the logits,
+    we can recover the bias~\(\vb\) and scaling terms~\(\boldsymbol\sigma\)
+    of an LM's output layer affine transformation
+    by fitting an ellipse to the outputs of a language model 
+    and observing what offset and scaling were applied to obtain it.
+  }
+\end{figure}
+
+Now let us consider what happens to this hypersphere under the model's final set of transformations.
+In particular, the points~\(\vx\) on the hypersphere are mapped to 
+\(\mU\Sigma\mV^T\vx + \vb,\)
+which as an \emph{affine transformation}.
+This means that the co-domain of the model is an affine transformation of the hypersphere, i.e., an \emph{ellipsoid}.
+Note that since the first operation \(\mV^T\) rotates the points on a hypersphere,
+the outputs of this operation will still be on the hypersphere.
+We can therefore remove this operation without changing the co-domain, 
+so we will only conisder \(\mU\Sigma\vx + \vb.\)
+
+Now that we know that the model outputs will be constrained to an ellipsoid,
+we can find this ellipsoid by gathering a sufficient number of outputs 
+and using least squares regression to fit an ellipsoid~\cite{Bertoni2010PreprintSM}.
+The fitting algorithm immediately allows us to obtain \(\vb\), the center of the ellipsoid,
+as well as \(\mC\) such that \(\mC=(\mA\mA^\top)^{-1}\) and \(\mA=\mU\Sigma\).
+Unfortunately, we cannot directly obtain \(\mU\) and \(\Sigma\) from \(\mC\)
+since there are multiple solutions \(\mA\) that satisfy the relation.
+Employing Cholesky decomposition, 
+we can obtain one such solution~\(\hat\mA\).
+Running SVD on this solution and throwing away the initial rotation 
+we obtain \(\hat\mA=\hat\mU\Sigma\).
+This \(\Sigma\) is exactly the set of singular values we are looking for.
+It also turns out that the columns of \(\hat\mU\) are either identical or negated columns of \(\mU\).
+We therefore have the magnitude and directions of the rotation matrix entries, 
+but not necessarily the correct signs.
+This is due to the bilateral symmetries of the ellipsoid;
+it is not possible tell whether the ellipsoid was rotated \(\theta\) in one direction
+or \(\pi-\theta\) radians in the other.
+
+Thus we have found the singular values of the output layer's affine transformation,
+the translation parameters, and the directions of the rotation matrices.
+Furthermore, we now have a more restricted set (the ellipsoid) from which the model outputs must come. 
+
+\section{What you can do with the output ellipsoid}
+
+\[\argmax_\vx(\mA\vx+\vb)_i\quad\text{such that}\quad\vx^\top\vx=1 \]
+
+\bibliographystyle{plain}
+\bibliography{refs}
+
+\end{document}
