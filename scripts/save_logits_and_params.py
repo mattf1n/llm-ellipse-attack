@@ -1,25 +1,19 @@
-import argparse, os, json
+import argparse, os, json, itertools as it, math
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
-
-
-def get_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="rand")
-    return parser.parse_args()
+from utils import get_args, get_device
 
 
 @torch.inference_mode()
 def main():
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
-
     args = get_args()
+    device = get_device(args.device)
     model_basename = os.path.basename(args.model)
 
     if args.model == "test":
-        vocab_size = 8
-        hidden_size = 4
-        sample_size = 50
+        vocab_size = 5
+        hidden_size = 3
+        sample_size = math.comb(hidden_size, 2) + hidden_size - 1
         gamma, beta = torch.rand(hidden_size), torch.rand(hidden_size)
         embeds = torch.rand(vocab_size, hidden_size)
         weight = embeds @ torch.diag(gamma)
@@ -41,8 +35,14 @@ def main():
         bias = embeds @ beta
         vocab_size = model.config.vocab_size
         hidden_size = model.config.hidden_size
-        sample_size = hidden_size * 10
-        input_ids = torch.arange(sample_size, device=device).reshape(sample_size, 1)
+        sample_size = math.comb(hidden_size, 2) + hidden_size - 1
+        print(sample_size)
+        input_ids = torch.tensor(
+            list(it.islice(it.product(range(vocab_size), repeat=2), sample_size)),
+            device=device,
+        )
+        print(input_ids.shape)
+        assert input_ids.shape == (sample_size, 2)
         raw_logits = model(input_ids).logits[:, -1, :]  # shape: (Samp, Vocab)
         logprobs = raw_logits - torch.logsumexp(raw_logits, axis=1, keepdims=True)
         logits = logprobs - logprobs.mean(axis=1, keepdims=True)
