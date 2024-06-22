@@ -1,6 +1,6 @@
 models = test EleutherAI/pythia-70m
 
-all: paper $(models)
+all: paper 
 
 test: %: scripts/pythia.py data/%/coeffs3.pt data/%/weight.pt 
 	python $< --model $@
@@ -22,9 +22,15 @@ data/test/logits.pt data/test/bias.pt: scripts/save_logits_and_params.py
 
 data/pythia-70m/logits.pt data/pythia-70m/bias.pt: scripts/save_logits_and_params.py
 	python $< --model EleutherAI/pythia-70m
+
+queries: scripts/make_batch_file.py
+	python $<
 	
-paper: 
+paper: tab/models.tex
 	latexmk --pdf exact &> /dev/null; pplatex -i exact.log 
+
+tab/models.tex: scripts/cost_est.py
+	python $<
 
 clean:
 	latexmk -C exact

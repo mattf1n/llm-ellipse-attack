@@ -2,7 +2,13 @@
 
 
 \usepackage{microtype}
+\usepackage{hyperref}
+\usepackage{threeparttable}
+\usepackage{siunitx}
+\usepackage{booktabs}
 \usepackage{charter}
+\usepackage{natbib}
+\usepackage{mathtools}
 \usepackage[charter]{mathdesign}
 
 \usepackage{tikz}
@@ -66,11 +72,23 @@
   }
 \end{figure}
 
+In previous work, \citet{Finlayson2024LogitsOA} and \citet{Carlini2024StealingPO} showed that it is possible to recover information about an LM's final layer by observing the structure of the LM outputs.
+In particular, they observe that LM outputs are restricted to a low-dimensional space, and are able to discover this space by observing the outputs.
+This is accomplished by finding a matrix~\(\hat\mW\) whose columns span the model's output space, i.e., all outputs from the model are a linear combination of the columns of \(\hat\mW\).
+Equivalently, this means that \(\hat\mW\) is a \emph{linear transformation} of the LM's output embedding matrix~\(\mW\), i.e., \(\mW=\hat\mW\mA\) for some unknown linear transformation~\(\mA\in\mathbb{R}^d\).
+\citeauthor{Finlayson2024LogitsOA} call this output space spanned by the columns of both \(\mW\) and \(\hat\mW\) the \textit{model image}. 
+
+Though useful, the model image gives limited information about the model's actual parameters.
+We know that the columns of the embedding matrix are in the span of the columns of \(\mW'\),
+but we do not know how they rotate or scale the activations of the model.
+However, it turns out that we can recover this additional information by leveraging the mathematical properties of the model's penultimate layer: the \textit{layer norm}.
+
 Toward our goal of extracting information about the LM's internals,
 we will begin by deriving an equivalent reformulation 
 of a typical LM's final set of operations.
 The purpose of this reformulation is to separate out components 
 that we will be able to recover form those that we will not.
+
 The final two output layers of an LM are a layernorm
 \[\layernorm(\vx)=\frac{\vx-\E[\vx]}{\sqrt{\Var(\vx)}}\gamma + \beta,\]
 followed by a multiplication by the embedding matrix~\(\mW\). 
@@ -79,7 +97,7 @@ the model logits are \(\logits(\vx)=\mW\layernorm(\vx).\)
 However, the logits can be equivalently viewed as a standardization
 \[\standardize(\vx)=\frac{\vx-\E[\vx]}{\sqrt{\Var(\vx)}}\]
 followed by an affine transformation, i.e.,
-\(\logits(\vx)=\mW\diag(\gamma)\standardize(\vx) + \mW\beta.\)
+\[\logits(\vx)=\mW\diag(\gamma)\standardize(\vx) + \mW\beta.\]
 Finally, using singular value decomposition (SVD),
 there is some rotation~\(\mU\in\R^{v\times v}\),
 scale~\(\Sigma\in\R^{v\times d}\) 
@@ -89,8 +107,9 @@ such that \(\mU\Sigma\mV^\top=\mW\diag(\gamma)\).
 This decomposition is \emph{almost} unique,
 up to the ordering of equal scaling factors and their associated rotations.
 For the purposes of this paper, consider it to be unique.
-Therefore we have that 
-\[\logits(\vx)=\mU\Sigma\mV\standardize(\vx)+\mW\beta.\]
+Secondly, we can re-parameterize \(\mW\beta\) as \(\vb\)
+Therefore we arrive at 
+\[\logits(\vx)=\mU\Sigma\mV^\top\standardize(\vx)+\vb.\]
 This reformulation is an unique decomposition of the model's final layer.
 
 \begin{figure}
@@ -153,18 +172,100 @@ It also turns out that the columns of \(\hat\mU\) are either identical or negate
 We therefore have the magnitude and directions of the rotation matrix entries, 
 but not necessarily the correct signs.
 This is due to the bilateral symmetries of the ellipsoid;
-it is not possible tell whether the ellipsoid was rotated \(\theta\) in one direction
-or \(\pi-\theta\) radians in the other.
+it is not possible tell whether the ellipsoid was rotated \(\theta\) radians in one direction
+or \(\pi+\theta\) in the other.
 
 Thus we have found the singular values of the output layer's affine transformation,
 the translation parameters, and the directions of the rotation matrices.
 Furthermore, we now have a more restricted set (the ellipsoid) from which the model outputs must come. 
 
-\section{What you can do with the output ellipsoid}
+\section{How many points define a hyperellipsoid?}
+A hyperellipsoid (or simply ellipsoid) is a special case of a quadric hypersurface\footnotemark{} (or simply quadric).
+\footnotetext{\url{https://en.wikipedia.org/wiki/Quadric}}
+The general equation for a quadric with dimension~\(d\) has the form 
+\[\sum_{i=1}^d\sum_{j=i}^dQ_{i,j}x_ix_j + \sum_{i=1}^dP_ix_i=1,\]
+where \(Q\) and \(P\) are the parameters of the ellipsoid.
+The set of vectors \(\vx\) that satisfy this equation form the ellipsoid surface.
+The total number of terms in the above equation is \(n=(d^2+3d)/2\).
+To solve for the parameters of an ellipsoid 
+it suffices to collect \(n\) samples~\(
+\mX=\begin{bmatrix}
+\vx^1&\vx^2&\cdots&\vx^n
+\end{bmatrix}\in\R^{d\times n}
+\) from the ellipsoid surface,
+construct the quadratic terms 
+\[
+  \prescript{\otimes}{}\vx^k = \begin{bmatrix}
+  x^k_1x^k_1 & x^k_1x^k_2 & \cdots & x^k_1x^k_d & x^k_2x^k_2 & x^k_2x^k_3 & \cdots & x^k_dx^k_d & \vx^k
+\end{bmatrix}\in\R^n
+\] for each sample \(\vx^k\), 
+from which we construct \(\prescript\otimes{}\mX=\begin{bmatrix}
+  \prescript\otimes{}\vx^1&\prescript\otimes{}\vx^2&\cdots&\prescript\otimes{}\vx^n
+\end{bmatrix}\in\R^{n\times n}
+\)
+and solve the linear equation
+\[
+  \prescript\otimes{}\mX^\top\begin{bmatrix}
+    Q \\ P
+  \end{bmatrix} 
+  = \mathbf1 
+\]
+for \(Q\) and \(P\).\footnotemark{}
+\footnotetext{
+  Though \(Q\) is in \(\R^{n-d}\), we index it as \(Q_{i,j}\) for \(i=1,2,\ldots,d\) and \(i\leq j\leq d\) for notational convenience. One can check that this results in \(n-d\) indices.
+}
 
-\[\argmax_\vx(\mA\vx+\vb)_i\quad\text{such that}\quad\vx^\top\vx=1 \]
+This method for solving for a \(d\)-dimensional hyperellipsoid means that for a model with a hidden size of 512, or \(2^9\), 
+we would need \(2^{17} + 2^9 + 2^8=\num{131 840}\) samples. 
+More generally, the number of samples is \(O(d^2)\).
+Typically for these attacks, a single prefix token is sent to the model to obtain a sample. 
+However, as the number of samples surpasses the vocabulary size of the model it becomes necessary to send multi-token prefixes to the model in order to expand the number of unique prefixes.
+The number of tokens per sample grows logarithmically with the number of samples required~\(n\), i.e., it grows at a rate of \(O(\log_vn)\). 
+Combining this with the sample complexity as a function of model embedding size~\(d\) and the fact that we need \(d\) queries per sample means that 
+the cost of executing the attack grows at a rate of~\(O(d^3\log_vd)\).
 
-\bibliographystyle{plain}
+Since the cost grows super-cubically with the hidden size, 
+current API pricing makes it prohibitively expensive to obtain scaling factors for many popular LLMs, as shown in Table~\ref{tab:price}.
+Though OpenAI's cheapest and smallest available generative model, \texttt{babbage-002}, is only about \$\num{1000} to attack, \texttt{gpt-3.5-turbo} costs over \$\num{150 000}.
+However, if historic trends continue, these costs could drop significantly in the future.
+
+\begin{table}
+  \centering
+  \small
+  \begin{threeparttable}
+  \input{tab/models.tex}
+    \begin{tablenotes}
+    \item[a] Confirmed size from \citet{Carlini2024StealingPO}.
+    \item[b] Estimated size upper limit from \citet{Finlayson2024LogitsOA}.
+    \end{tablenotes}
+  \end{threeparttable}
+  \caption{
+    A summary of models, their sizes, the number of samples required to ascertain their output ellipsoid, and the cost of obtaining the samples, based on OpenAI inference pricing on June 7, 2024. The number of samples required grows quadratically with the embedding size, and the price per sample grows logarithmically with the number of samples.
+  }
+  \label{tab:price}
+\end{table}
+
+\section{Model ellipses as signatures}
+
+\citet{Finlayson2024LogitsOA} identify several useful applications for the model image. 
+Among them is the idea of using the model's unique output space as a type of \textit{signature}
+that can be used as a unique identifier for the model outputs.
+One shortcoming of their proposal is that for relatively cheap,
+an attacker can discover the model image. 
+The prohibitive cost of discovering the model ellipse, however, makes it more suitable for certain applications.
+Assuming that the parameters of the model ellipse are known only to the model provider, the provider can cheaply and with high accuracy identify outputs that belong to their own model.
+Other providers cannot produce outputs on the model ellipse without knowing the ellipse.
+This fact could be used to verify that outputs come from their own model.
+
+If the cost of obtaining the model ellipse is sufficiently high,
+then only a provider with access to the model can provide outputs on the model ellipse.
+Furthermore, an audit can be made without making the provider aware that such an audit is taking place, since only a few API calls are made.
+A provider with access to the weights can disguise the model by applying perturbations to the outputs.
+A provider without access to the weights cannot.
+A provider could prove posession of model weights by providing a hash of the weights.
+A provider with the weights could disguise another model by transplanting the final layer onto the other model.
+
+\bibliographystyle{plainnat}
 \bibliography{refs}
 
 \end{document}

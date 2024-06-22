@@ -12,6 +12,13 @@ def get_args():
 
 @torch.inference_mode()
 def main():
+    device = (
+        "mps"
+        if torch.backends.mps.is_available()
+        else "cuda"
+        if torch.backends.cuda.is_available()
+        else "cpu"
+    )
     args = get_args()
     model_basename = os.path.basename(args.model)
     path = f"data/{model_basename}"
@@ -20,16 +27,16 @@ def main():
     hidden_size = config["hidden_size"] - 1
     vocab_size = config["vocab_size"]
     sample_size = config["sample_size"]
-    logits = torch.load(os.path.join(path, "logits.pt")).cpu()
+    logits = torch.load(os.path.join(path, "logits.pt")).to(device)
 
-    down_proj = torch.eye(vocab_size, hidden_size)
+    down_proj = torch.eye(vocab_size, hidden_size, device=device)
     points = logits @ down_proj  # shape: (Samp, Hidden - 1)
     torch.save(points, os.path.join(path, "points.pt"))
 
-    # Representation 1: terms @ coeffs1 = 2
+    # Representation 1: terms @ coeffs1 = 1
     print("Getting representation 1")
     terms = torch.cat((get_second_order_terms(points), points), axis=1)
-    coeffs1 = torch.linalg.lstsq(terms, torch.ones(sample_size), rcond=None)[0]
+    coeffs1 = torch.linalg.solve(terms, torch.ones(sample_size, device=device))
 
     torch.save(coeffs1, os.path.join(path, "coeffs1.pt"))
 
