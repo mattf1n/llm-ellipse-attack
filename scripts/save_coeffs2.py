@@ -25,7 +25,9 @@ def main():
 
     # Representation 2: points @ coeffs2 @ points.T + bias = 1
     print("Getting representation 2")
-    coeffs2 = coeffs1[: hidden_size * hidden_size].reshape(hidden_size, hidden_size)
+    coeffs2 = torch.eye(hidden_size)
+    coeffs2[*torch.triu_indices(hidden_size, hidden_size)] = coeffs1[:-hidden_size]
+    # coeffs2 = coeffs1[:-hidden_size].reshape(hidden_size, hidden_size)
     est_bias = torch.linalg.inv(-2 * coeffs2) @ coeffs1[-hidden_size:]  # Dim
     center = torch.eye(vocab_size) - torch.eye(vocab_size).mean(0)
     down_proj = torch.eye(vocab_size, hidden_size)
