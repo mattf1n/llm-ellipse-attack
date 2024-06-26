@@ -12,7 +12,7 @@ def rotate(u, v):
     return reflect(S, v)
 
 
-dim = 3
+dim = 4
 emb = dim + 1
 vocab = emb * 2
 batch = 50
