@@ -25,7 +25,8 @@ def main():
 
     # Representation 4: (points - b) @ (AA^T)^-1 @ (points - b) = 1
     print("Getting representation 4")
-    A = torch.linalg.cholesky(torch.linalg.inv(coeffs3)).T
+    A_inv = torch.linalg.cholesky(coeffs3)
+    A = torch.linalg.inv(A_inv)
     A_svd = torch.linalg.svd(A).S
 
     center = torch.eye(vocab_size) - torch.eye(vocab_size).mean(0)

@@ -21,7 +21,7 @@ data/test/logits.pt data/test/bias.pt: scripts/save_logits_and_params.py
 	python $< --model test --device cpu
 
 data/pythia-70m/logits.pt data/pythia-70m/bias.pt: scripts/save_logits_and_params.py
-	python $< --model EleutherAI/pythia-70m
+	python $< --model EleutherAI/pythia-70m --device cpu
 
 queries: scripts/make_batch_file.py
 	python $<

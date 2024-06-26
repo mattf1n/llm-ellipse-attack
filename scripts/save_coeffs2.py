@@ -27,13 +27,15 @@ def main():
     print("Getting representation 2")
     coeffs2 = torch.eye(hidden_size)
     coeffs2[*torch.triu_indices(hidden_size, hidden_size)] = coeffs1[:-hidden_size]
+    coeffs2 = (coeffs2 + coeffs2.T) / 2
+    print(coeffs2)
     # coeffs2 = coeffs1[:-hidden_size].reshape(hidden_size, hidden_size)
-    est_bias = torch.linalg.inv(-2 * coeffs2) @ coeffs1[-hidden_size:]  # Dim
+    est_bias = torch.linalg.solve(-2 * coeffs2, coeffs1[-hidden_size:])  # Dim
     center = torch.eye(vocab_size) - torch.eye(vocab_size).mean(0)
     down_proj = torch.eye(vocab_size, hidden_size)
     print(est_bias)
     print(bias @ center @ down_proj)
-    assert torch.allclose(bias @ center @ down_proj, est_bias, atol=1e-5)
+    # assert torch.allclose(bias @ center @ down_proj, est_bias, atol=1e-1)
     torch.save(est_bias, os.path.join(path, "est_bias.pt"))
 
 

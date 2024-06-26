@@ -11,8 +11,8 @@ def main():
     model_basename = os.path.basename(args.model)
 
     if args.model == "test":
-        vocab_size = 5
-        hidden_size = 3
+        vocab_size = 100
+        hidden_size = 40
         sample_size = math.comb(hidden_size, 2) + hidden_size - 1
         gamma, beta = torch.rand(hidden_size), torch.rand(hidden_size)
         embeds = torch.rand(vocab_size, hidden_size)
