@@ -2,18 +2,22 @@
 
 
 \usepackage{microtype}
+\usepackage{lettrine}
 \usepackage{hyperref}
 \usepackage{threeparttable}
 \usepackage{siunitx}
 \usepackage{booktabs}
-\usepackage{charter}
+\usepackage[bitstream-charter]{mathdesign}
+\usepackage{XCharter}
+\usepackage[T1]{fontenc}
 \usepackage{natbib}
 \usepackage{mathtools}
-\usepackage[charter]{mathdesign}
 
 \usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=newest}
 \usetikzlibrary{external}
-\usetikzlibrary{positioning, shapes, fit, 3d, perspective, shadings}
+\usetikzlibrary{positioning, shapes, fit, 3d, perspective, shadings, intersections}
 
 \input{math_commands}
 \newcommand\layernorm{\mathrm{layernorm}}
@@ -72,7 +76,7 @@
   }
 \end{figure}
 
-In previous work, \citet{Finlayson2024LogitsOA} and \citet{Carlini2024StealingPO} showed that it is possible to recover information about an LM's final layer by observing the structure of the LM outputs.
+\lettrine{I}{n previous work,} \citet{Finlayson2024LogitsOA} and \citet{Carlini2024StealingPO} showed that it is possible to recover information about an LM's final layer by observing the structure of the LM outputs.
 In particular, they observe that LM outputs are restricted to a low-dimensional space, and are able to discover this space by observing the outputs.
 This is accomplished by finding a matrix~\(\hat\mW\) whose columns span the model's output space, i.e., all outputs from the model are a linear combination of the columns of \(\hat\mW\).
 Equivalently, this means that \(\hat\mW\) is a \emph{linear transformation} of the LM's output embedding matrix~\(\mW\), i.e., \(\mW=\hat\mW\mA\) for some unknown linear transformation~\(\mA\in\mathbb{R}^d\).
@@ -87,7 +91,7 @@ Toward our goal of extracting information about the LM's internals,
 we will begin by deriving an equivalent reformulation 
 of a typical LM's final set of operations.
 The purpose of this reformulation is to separate out components 
-that we will be able to recover form those that we will not.
+that we will be able to recover from those that we will not.
 
 The final two output layers of an LM are a layernorm
 \[\layernorm(\vx)=\frac{\vx-\E[\vx]}{\sqrt{\Var(\vx)}}\gamma + \beta,\]
@@ -121,7 +125,7 @@ This reformulation is an unique decomposition of the model's final layer.
 \end{figure}
 
 I will next demonstrate how we can recover the parameters of \(\Sigma\), 
-\(\vb=\mW\beta\), and the magnitudes of the entries of \(\mU\)
+\(\vb=\mW\beta\), and the directions of the entries of \(\mU\)
 by using the properties of the standardize function.
 The co-domain of the standardize function
 is the set of vectors with mean 0 and variance 1,
@@ -180,12 +184,12 @@ the translation parameters, and the directions of the rotation matrices.
 Furthermore, we now have a more restricted set (the ellipsoid) from which the model outputs must come. 
 
 \section{How many points define a hyperellipsoid?}
-A hyperellipsoid (or simply ellipsoid) is a special case of a quadric hypersurface\footnotemark{} (or simply quadric).
+\lettrine{A}{ hyperellipsoid} (or simply ellipsoid) is a special case of a quadric hypersurface\footnotemark{} (or simply quadric).
 \footnotetext{\url{https://en.wikipedia.org/wiki/Quadric}}
 The general equation for a quadric with dimension~\(d\) has the form 
 \[\sum_{i=1}^d\sum_{j=i}^dQ_{i,j}x_ix_j + \sum_{i=1}^dP_ix_i=1,\]
 where \(Q\) and \(P\) are the parameters of the ellipsoid.
-The set of vectors \(\vx\) that satisfy this equation form the ellipsoid surface.
+The set of vectors \(\vx\in\R^d\) that satisfy this equation form the ellipsoid surface.
 The total number of terms in the above equation is \(n=(d^2+3d)/2\).
 To solve for the parameters of an ellipsoid 
 it suffices to collect \(n\) samples~\(
@@ -245,27 +249,99 @@ However, if historic trends continue, these costs could drop significantly in th
   \label{tab:price}
 \end{table}
 
-\section{Model ellipses as signatures}
+\section{Model ellipses as weak signatures}
 
-\citet{Finlayson2024LogitsOA} identify several useful applications for the model image. 
-Among them is the idea of using the model's unique output space as a type of \textit{signature}
-that can be used as a unique identifier for the model outputs.
-One shortcoming of their proposal is that for relatively cheap,
-an attacker can discover the model image. 
-The prohibitive cost of discovering the model ellipse, however, makes it more suitable for certain applications.
-Assuming that the parameters of the model ellipse are known only to the model provider, the provider can cheaply and with high accuracy identify outputs that belong to their own model.
-Other providers cannot produce outputs on the model ellipse without knowing the ellipse.
-This fact could be used to verify that outputs come from their own model.
+\lettrine{T}{he authors of \citet{Finlayson2024LogitsOA}} identify several useful applications for the model image. 
+Among them is the idea of using the model's unique output space (its ``image'') 
+as a type of \textit{signature} to uniquely identify model outputs.
+One shortcoming of their proposal 
+is that anyone can cheaply obtain and share the model image,
+meaning that any model can be retrofitted to share the target LM's image. 
+This, combined with the fact that the original model be also be easily modified to change its image, (e.g., by continued training), means that the image is not very useful as a signature in an adversarial setting.
+The prohibitive cost of discovering the model ellipse, however, makes it more suitable for at least one particular application, which we will illustrate.
 
-If the cost of obtaining the model ellipse is sufficiently high,
-then only a provider with access to the model can provide outputs on the model ellipse.
-Furthermore, an audit can be made without making the provider aware that such an audit is taking place, since only a few API calls are made.
-A provider with access to the weights can disguise the model by applying perturbations to the outputs.
-A provider without access to the weights cannot.
-A provider could prove posession of model weights by providing a hash of the weights.
-A provider with the weights could disguise another model by transplanting the final layer onto the other model.
+Suppose Alice has a proprietary LM, protected by an API.
+As an act of revenge for his recent termination,
+Alice's former employee Bob decides to use not-yet revoked access to the company servers to download the model.
+Bob then goes to Candice and tries to sell his stolen model to her.
+Candice, knowing Bob's unscrupulous history, but wanting cheap access to the LM,
+wishes to verify that Bob's model is indeed the one he says it is.
+Candice can do this by simply checking that every output from Alice's model resides on Bob's model's ellipse. 
+This can even be done without requiring Bob to reveal his model's weights.
+If Candice obtains a random output from Alice's model, she can reveal any \(d-3\) elements from this output to Bob. Once this is done, Bob can give Candice two candidate values for each remaining element in the output, one of which will be correct.
 
-\bibliographystyle{plainnat}
+\begin{figure}
+  \centering
+  \small
+  \begin{tikzpicture}[node distance=2cm]
+    \node (A) {Alice};
+    \node (B) [right=of A] {Bob};
+    \draw[->] (A) -- node[above] {1. Steals LM} (B);
+    \node (C) [right=of B] {Candice};
+    \draw[->] (A) to[bend right] node [below] {2. Gets random \(\vell\)} (C);
+    \draw[->] (C) to[bend right] node [above] {3. Reveals \(\vell_{:d-3}\)} (B);
+    \draw[->] (B) to node [below] {4. Sends \(\vell_{d-2}\)} (C);
+  \end{tikzpicture}
+  \hfill
+  \begin{tikzpicture}[
+      steplabel/.style={draw, fill=white},
+      transformlabel/.style={fill=white, rounded corners, inner sep=1pt}
+    ]
+    \newcommand\yradius{0.7}
+    \coordinate (input) at (0,0);
+    \draw[name path=ellipse] (input) circle [x radius=1.5, y radius=\yradius, rotate=30];
+    \draw[<->, name path=line] (0.5,1.2) -- (0.5,-1) node [below] {1. Candice reveals \(\vell_0\)};
+    \fill [name intersections={of=ellipse and line}] 
+    (intersection-1) circle (1.5pt) 
+    (intersection-2) circle (1.5pt) node [right] {\(\vell\)};
+    \node[fill=white] (B) at (-1, -0.25) {2. Bob guesses \(\vell\)};
+    \draw[->, shorten >=2pt] (B) -- (intersection-1);
+    \draw[->, shorten >=2pt] (B) -- (intersection-2);
+  \end{tikzpicture}
+\end{figure}
+
+
+\section{Ellipsoid fitting}
+
+\lettrine{O}{btaining sufficient samples} from an API-protected LLM is only the first step in finding the model ellipse. 
+The second step is to fit an ellipse to the samples.
+This, it turns out, is also difficult. 
+There has been progress over recent decades on fast algorithms for multi-dimensional ellipsoid fitting~\citep{Calafiore2002ApproximationON, Ying2012AFA}, however the best known method still requires \(O(d^6)\) time~\citep{Lin2016FastME} which is prohibitively polynomial, as illustrated in Figure~\ref{fig:eigh}.
+
+\begin{figure}
+  \centering
+  \small
+  \begin{tikzpicture}
+    \begin{axis}[
+        width=0.5\textwidth,
+        height=4cm,
+        xlabel={Dimension \(d\)},
+        ylabel={Time (seconds)},
+      ]
+      \addplot[only marks] table {data/times.dat};
+      \addplot[raw gnuplot] gnuplot {
+        f(x) = a * x ** 6 + b * x ** 5 + c * x ** 4 + d * x ** 3 + e * x ** 2 + f * x + g;
+        a = 1; b = 0; c = 0; d = 0; e = 0; f = 0; g = 0;
+        fit f(x) 'data/times.dat' using 1:2 via a,b,c,d,e,f,g;
+        plot[0:220] f(x);
+      };
+    \end{axis}
+  \end{tikzpicture}
+  \caption{
+    Pictured here are the runtimes for taking the eigendecomposition of the symmetric matrix 
+    composed of the quadratic terms of \(m\) \(d\)-dimensional points on an ellipsoid.
+    Times are obtained on an M1 MacBook Pro
+    using the \texttt{\_syevd} routine from LAPACK~\citep{laug} 
+    via NumPy's \texttt{linalg.eigh} function~\citep{harris2020array}.
+    This is the main computational bottleneck of the fastest known algorithm 
+    for fitting a multi-dimensional elliposid, which takes \(O(d^6)\) time. 
+    While still polynomial, this is a severe computational hurdle
+    when LLMs have embedding dimensions in the thousands.
+  }
+  \label{fig:eigh}
+\end{figure}
+
+\bibliographystyle{chicago-annote}
 \bibliography{refs}
 
 \end{document}
