@@ -1,6 +1,9 @@
 \documentclass{article}
 
 
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
 \usepackage{microtype}
 \usepackage{lettrine}
 \usepackage{hyperref}
@@ -16,6 +19,7 @@
 \usepackage{tikz}
 \usepackage{pgfplots}
 \pgfplotsset{compat=newest}
+\usepgfplotslibrary{groupplots}
 \usetikzlibrary{external}
 \usetikzlibrary{positioning, shapes, fit, 3d, perspective, shadings, intersections}
 
@@ -24,6 +28,7 @@
 \newcommand\standardize{\mathrm{standardize}}
 \newcommand\logits{\mathrm{logits}}
 \newcommand\diag{\mathrm{diag}}
+\newcommand\linalgspan{\mathrm{span}}
 
 \author{Matthew Finlayson}
 \title{Taking API-Protected Language Model Attacks One Layer Deeper}
@@ -64,34 +69,55 @@
   constitutes an significant result in the field of LM API security.
 \end{abstract}
 
-\section{Finding the scale and bias of the final layer}
+\section{Finding the output layer scale, rotation, and bias}
 
 \begin{figure}
   \centering
   \small
   \input{fig/arch}
   \caption{
-    A typical language model uses a layernorm layer followed by a linear projection to obtain logits.
-    Equivalently, these operations can be viewed as standardization followed by an affine transformation which can be uniquely decomposed further into rotations and scaling operations.
+    A typical language model uses a layernorm layer 
+    followed by a linear projection to obtain logits.
+    Equivalently, we view these operations as standardization~(\ref{eq:standardize}) 
+    followed by an affine transformation~\(\vx\mapsto\mW\diag(\gamma)\vx+\mW\beta\). 
+    We further decompose the affine transformation 
+    via singular value decomposition (SVD) 
+    into pure rotation and scaling 
+    operations~\(\mU\Sigma\mV^\top=\mW\diag(\gamma)\)
+    and a bias term~\(\vb=\mW\beta\).
+    We show that it is possible to recover the parameters~\(\Sigma\), \(\vb\),
+    and the magnitudes and directions (but not signs) of the columns of \(\mU\)
+    by observing logit outputs from the model.
+    % TODO: rows or columns?
   }
+  \label{fig:arch}
 \end{figure}
 
 \lettrine{I}{n previous work,} \citet{Finlayson2024LogitsOA} and \citet{Carlini2024StealingPO} showed that it is possible to recover information about an LM's final layer by observing the structure of the LM outputs.
 In particular, they observe that LM outputs are restricted to a low-dimensional space, and are able to discover this space by observing the outputs.
-This is accomplished by finding a matrix~\(\hat\mW\) whose columns span the model's output space, i.e., all outputs from the model are a linear combination of the columns of \(\hat\mW\).
-Equivalently, this means that \(\hat\mW\) is a \emph{linear transformation} of the LM's output embedding matrix~\(\mW\), i.e., \(\mW=\hat\mW\mA\) for some unknown linear transformation~\(\mA\in\mathbb{R}^d\).
-\citeauthor{Finlayson2024LogitsOA} call this output space spanned by the columns of both \(\mW\) and \(\hat\mW\) the \textit{model image}. 
+This is accomplished by finding a matrix~\(\mL\) whose columns span the model's output space, i.e., all outputs from the model are a linear combination of the columns of \(\mL\).
+Equivalently, this means that \(\mL\) is a \emph{linear transformation} of the LM's output embedding matrix~\(\mW\),
+i.e., \(\mW\mH=\mL\) for some unknown linear transformation~\(\mH\in\mathbb{R}^{d\times d}\).
+\citeauthor{Finlayson2024LogitsOA} call this output space spanned by the columns of both \(\mW\) and \(\mL\) the \textit{model image}. 
 
-Though useful, the model image gives limited information about the model's actual parameters.
-We know that the columns of the embedding matrix are in the span of the columns of \(\mW'\),
-but we do not know how they rotate or scale the activations of the model.
-However, it turns out that we can recover this additional information by leveraging the mathematical properties of the model's penultimate layer: the \textit{layer norm}.
+The model image, i.e., \(\linalgspan(\mL)\),
+gives some limited information about the model's actual parameters,
+but it doesn't tell us how the embedding matrix~\(\mW\) 
+rotates or scales the activations of the model.
+It turns out that we can recover this additional information by leveraging the mathematical properties of the model's penultimate layer: the \textit{layer norm}.
 
-Toward our goal of extracting information about the LM's internals,
-we will begin by deriving an equivalent reformulation 
-of a typical LM's final set of operations.
-The purpose of this reformulation is to separate out components 
-that we will be able to recover from those that we will not.
+\subsection{Decomposing output layer operations}
+
+In order to isolate the rotations and scales in the model's output layer 
+that we wish to recover,
+we reformulate the model's output layers into an equivalent parameterization
+that exposes these operations.
+Figure~\ref{fig:arch} illustrates our reparametrization of 
+\[\vx\mapsto\mW\layernorm_{\gamma,\beta}(\vx) \quad
+\text{as} \quad \vx\mapsto\mU\Sigma\mV^\top\standardize(\vx)+\vb\]
+where \(\mU\) and \(\mV^\top\) are unitary (i.e., rotation) matrices, 
+\(\Sigma\) is a diagonal (i.e., scaling) matrix, and \(\vb\in\R^v\) is a bias term.
+For the sake of clarity, we next explain this reparameterizatoin step by step.
 
 The final two output layers of an LM are a layernorm
 \[\layernorm(\vx)=\frac{\vx-\E[\vx]}{\sqrt{\Var(\vx)}}\gamma + \beta,\]
@@ -99,7 +125,10 @@ followed by a multiplication by the embedding matrix~\(\mW\).
 In other words, given an embedding~\(\vx\)
 the model logits are \(\logits(\vx)=\mW\layernorm(\vx).\)
 However, the logits can be equivalently viewed as a standardization
-\[\standardize(\vx)=\frac{\vx-\E[\vx]}{\sqrt{\Var(\vx)}}\]
+\begin{equation}
+  \standardize(\vx)=\frac{\vx-\E[\vx]}{\sqrt{\Var(\vx)}}
+  \label{eq:standardize}
+\end{equation}
 followed by an affine transformation, i.e.,
 \[\logits(\vx)=\mW\diag(\gamma)\standardize(\vx) + \mW\beta.\]
 Finally, using singular value decomposition (SVD),
@@ -123,6 +152,8 @@ This reformulation is an unique decomposition of the model's final layer.
   \caption{The standardize function's output is restrited to the intersection of a plane and a sphere (indicated with a thick ring).}
   \label{fig:standardize}
 \end{figure}
+
+\subsection{Language model outputs are on hyperellipsoids}
 
 I will next demonstrate how we can recover the parameters of \(\Sigma\), 
 \(\vb=\mW\beta\), and the directions of the entries of \(\mU\)
@@ -158,78 +189,58 @@ This means that the co-domain of the model is an affine transformation of the hy
 Note that since the first operation \(\mV^T\) rotates the points on a hypersphere,
 the outputs of this operation will still be on the hypersphere.
 We can therefore remove this operation without changing the co-domain, 
-so we will only conisder \(\mU\Sigma\vx + \vb.\)
+and focus only on \(\mU\Sigma\vx + \vb.\)
+Note that this means that \(\mV^\top\) is not recoverable via our method.
 
-Now that we know that the model outputs will be constrained to an ellipsoid,
-we can find this ellipsoid by gathering a sufficient number of outputs 
-and using least squares regression to fit an ellipsoid~\cite{Bertoni2010PreprintSM}.
-The fitting algorithm immediately allows us to obtain \(\vb\), the center of the ellipsoid,
-as well as \(\mC\) such that \(\mC=(\mA\mA^\top)^{-1}\) and \(\mA=\mU\Sigma\).
-Unfortunately, we cannot directly obtain \(\mU\) and \(\Sigma\) from \(\mC\)
-since there are multiple solutions \(\mA\) that satisfy the relation.
-Employing Cholesky decomposition, 
-we can obtain one such solution~\(\hat\mA\).
-Running SVD on this solution and throwing away the initial rotation 
-we obtain \(\hat\mA=\hat\mU\Sigma\).
-This \(\Sigma\) is exactly the set of singular values we are looking for.
-It also turns out that the columns of \(\hat\mU\) are either identical or negated columns of \(\mU\).
-We therefore have the magnitude and directions of the rotation matrix entries, 
-but not necessarily the correct signs.
-This is due to the bilateral symmetries of the ellipsoid;
-it is not possible tell whether the ellipsoid was rotated \(\theta\) radians in one direction
-or \(\pi+\theta\) in the other.
+\subsection{Using model ellipses to steal model parameters}
 
-Thus we have found the singular values of the output layer's affine transformation,
-the translation parameters, and the directions of the rotation matrices.
-Furthermore, we now have a more restricted set (the ellipsoid) from which the model outputs must come. 
+Having established that model outputs lie on an ellipsoid, we now present an algorithm for obtaining model parameters~\(\Sigma,\mU,\vb\) from model outputs.
 
-\section{How many points define a hyperellipsoid?}
-\lettrine{A}{ hyperellipsoid} (or simply ellipsoid) is a special case of a quadric hypersurface\footnotemark{} (or simply quadric).
+\begin{algorithm}
+  \caption{Get output layer parameters of a language model.}
+\begin{algorithmic}
+  \Function{Method}{\(d\), \texttt{model}}
+  \State \(m:=\binom{d+1}{2}+d\)
+  \Comment Sample complexity for a \(d\)-ellipsoid (\S\ref{sec:samp})
+  \State \(\vell_1,\vell_2,...,\vell_m\in\R^d\sim\texttt{model}\)
+  \Comment Sample \(m\) outputs for tokens 1--\(d\)
+  \State \(\mA,\vb = \textsc{EllipsoidFit}(\vell_1,\vell_2,\ldots,\vell_m)\)
+  \Comment \citep{Lin2016FastME}, \(O(d^6)\)
+  \State \(\mU', \Sigma, \_ = \textsc{SVD}(\mA)\)
+  \Comment Singular value decomposition
+  \State \Return \(\Sigma, \mU', \vb\)
+  \EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+\section{The polynomial infeasibility of ellipsoid discovery}
+
+\subsection{The sample cost of model ellipse discovery is super-cubic}
+\label{sec:samp}
+
+A hyperellipsoid (or simply ellipsoid) is a special case of a quadric hypersurface\footnotemark{} (or simply quadric).
 \footnotetext{\url{https://en.wikipedia.org/wiki/Quadric}}
 The general equation for a quadric with dimension~\(d\) has the form 
 \[\sum_{i=1}^d\sum_{j=i}^dQ_{i,j}x_ix_j + \sum_{i=1}^dP_ix_i=1,\]
-where \(Q\) and \(P\) are the parameters of the ellipsoid.
+where \(Q\) and \(P\) are parameters.
 The set of vectors \(\vx\in\R^d\) that satisfy this equation form the ellipsoid surface.
-The total number of terms in the above equation is \(n=(d^2+3d)/2\).
-To solve for the parameters of an ellipsoid 
-it suffices to collect \(n\) samples~\(
-\mX=\begin{bmatrix}
-\vx^1&\vx^2&\cdots&\vx^n
-\end{bmatrix}\in\R^{d\times n}
-\) from the ellipsoid surface,
-construct the quadratic terms 
-\[
-  \prescript{\otimes}{}\vx^k = \begin{bmatrix}
-  x^k_1x^k_1 & x^k_1x^k_2 & \cdots & x^k_1x^k_d & x^k_2x^k_2 & x^k_2x^k_3 & \cdots & x^k_dx^k_d & \vx^k
-\end{bmatrix}\in\R^n
-\] for each sample \(\vx^k\), 
-from which we construct \(\prescript\otimes{}\mX=\begin{bmatrix}
-  \prescript\otimes{}\vx^1&\prescript\otimes{}\vx^2&\cdots&\prescript\otimes{}\vx^n
-\end{bmatrix}\in\R^{n\times n}
-\)
-and solve the linear equation
-\[
-  \prescript\otimes{}\mX^\top\begin{bmatrix}
-    Q \\ P
-  \end{bmatrix} 
-  = \mathbf1 
-\]
-for \(Q\) and \(P\).\footnotemark{}
-\footnotetext{
-  Though \(Q\) is in \(\R^{n-d}\), we index it as \(Q_{i,j}\) for \(i=1,2,\ldots,d\) and \(i\leq j\leq d\) for notational convenience. One can check that this results in \(n-d\) indices.
-}
+The total number of terms in the above equation is \(m=\binom{d+1}{2}+d=(d^2+3d)/2\).
+Since the equation for a quadric is linear in its parameters,
+a set of \(m\) points uniquely defines a quadric.
 
 This method for solving for a \(d\)-dimensional hyperellipsoid means that for a model with a hidden size of 512, or \(2^9\), 
 we would need \(2^{17} + 2^9 + 2^8=\num{131 840}\) samples. 
 More generally, the number of samples is \(O(d^2)\).
-Typically for these attacks, a single prefix token is sent to the model to obtain a sample. 
-However, as the number of samples surpasses the vocabulary size of the model it becomes necessary to send multi-token prefixes to the model in order to expand the number of unique prefixes.
-The number of tokens per sample grows logarithmically with the number of samples required~\(n\), i.e., it grows at a rate of \(O(\log_vn)\). 
-Combining this with the sample complexity as a function of model embedding size~\(d\) and the fact that we need \(d\) queries per sample means that 
-the cost of executing the attack grows at a rate of~\(O(d^3\log_vd)\).
+This quadratic growth makes finding a model's ellipse from its outputs much more expensive than finding its image, which only requires \(O(d)\) samples.
+
+In order to minimize cost, an attacker typically sends a single prefix token to an LLM API for each sample.
+However, as the required number of samples surpasses the vocabulary size of the model it becomes necessary to send multi-token prefixes to the model in order to expand the number of unique prefixes.
+The number of tokens per sample grows logarithmically with the number of samples required~\(m\), i.e., it grows at a rate of \(O(\log m)=O(\log d)\). 
+Additionally, if the API only reveals a small number of logits per query we need \(O(d)\) queries per sample.
+In all, this means that the cost of discovering the model ellipse grows at a rate of~\(O(d^3\log d)\).
 
 Since the cost grows super-cubically with the hidden size, 
-current API pricing makes it prohibitively expensive to obtain scaling factors for many popular LLMs, as shown in Table~\ref{tab:price}.
+current API pricing makes it prohibitively expensive to obtain the ellipse of many popular LLMs, as shown in Table~\ref{tab:price}.
 Though OpenAI's cheapest and smallest available generative model, \texttt{babbage-002}, is only about \$\num{1000} to attack, \texttt{gpt-3.5-turbo} costs over \$\num{150 000}.
 However, if historic trends continue, these costs could drop significantly in the future.
 
@@ -248,6 +259,75 @@ However, if historic trends continue, these costs could drop significantly in th
   }
   \label{tab:price}
 \end{table}
+
+\subsection{Ellipsoid fitting takes sextic time}
+
+Obtaining sufficient samples from an API-protected LLM is only the first step in finding the model ellipse. 
+The second step is to fit an ellipse to the samples.
+This, it turns out, is also difficult. 
+There has been progress over recent decades on fast algorithms for multi-dimensional ellipsoid fitting~\citep{Calafiore2002ApproximationON, Ying2012AFA}, however the best known method still requires \(O(d^6)\) time~\citep{Lin2016FastME} which is prohibitively polynomial, as illustrated in Figure~\ref{fig:eigh}. 
+Extrapolating our best-fit polynomial, finding the ellipse of a \texttt{gpt-3.5-turbo}-size model would take a laptop thousands of years.
+If found, faster ellipsoid fitting methods could greadly reduce this figure,
+but it could also be the case that current methods are already near the lower bound for ellipsoid fitting complexity.
+
+We use the slower semi-definite programming algorithm from \citet{Ying2012AFA} in our experiments since it is easy to implement and numerically stable.
+
+\begin{figure}
+  \centering
+  \small
+  \begin{tikzpicture}
+    \begin{groupplot}[
+        group style={
+          group size=2 by 1,
+        },
+        width=0.55\textwidth,
+        height=5cm,
+        xlabel={Dimension \(d\)},
+      ]
+      \nextgroupplot[
+        legend style={legend pos=north west},
+        ylabel={Time (minutes)},
+        scaled y ticks=manual:{}{\pgfmathparse{#1/60}},
+        ytick={0,{10 * 60}, {20 * 60}, {30 * 60}}
+      ]
+      \addplot[only marks] table {data/times.dat};
+      \addlegendentry{\(\texttt{eigh}(\mH)\), \(\mH=\mH^\top\)}
+      \addplot[raw gnuplot] gnuplot {
+        f(x) = a * x ** 6 + b * x ** 5 + c * x ** 4 + d * x ** 3 + e * x ** 2 + f * x + g;
+        a = 1; b = 0; c = 0; d = 0; e = 0; f = 0; g = 0;
+        fit f(x) 'data/times.dat' using 1:2 via a,b,c,d,e,f,g;
+        plot[0:210] f(x);
+      };
+      \addlegendentry{Best fit, \(O(6)\)}
+      \nextgroupplot[
+        width=0.45\textwidth,
+        title=Extrapolation,
+        scaled y ticks=manual:{}{\pgfmathparse{#1/60/525960/1000}},
+        ytick={0,{3000 * 60 * 525960},{6000 * 60 * 525972}},
+        ylabel={Time (millenia)},
+      ]
+      \addplot[only marks] table {data/times.dat};
+      \addplot[raw gnuplot] gnuplot {
+        f(x) = a * x ** 6 + b * x ** 5 + c * x ** 4 + d * x ** 3 + e * x ** 2 + f * x + g;
+        a = 1; b = 0; c = 0; d = 0; e = 0; f = 0; g = 0;
+        fit f(x) 'data/times.dat' using 1:2 via a,b,c,d,e,f,g;
+        plot[0:4500] f(x);
+      };
+    \end{groupplot}
+  \end{tikzpicture}
+  \caption{
+    Pictured here are the runtimes for taking the eigendecomposition of the symmetric matrix 
+    composed of the quadratic terms of \(m\) \(d\)-dimensional points on an ellipsoid.
+    Times are obtained on an M1 MacBook Pro
+    using the \texttt{\_syevd} routine from LAPACK~\citep{laug} 
+    via NumPy's \texttt{linalg.eigh} function~\citep{harris2020array}.
+    This is the main computational bottleneck of the fastest known algorithm 
+    for fitting a multi-dimensional elliposid~\citep{Lin2016FastME}, which takes \(O(d^6)\) time. 
+    While still polynomial, this is a severe computational hurdle
+    when LLMs have embedding dimensions in the thousands.
+  }
+  \label{fig:eigh}
+\end{figure}
 
 \section{Model ellipses as weak signatures}
 
@@ -301,45 +381,6 @@ If Candice obtains a random output from Alice's model, she can reveal any \(d-3\
 \end{figure}
 
 
-\section{Ellipsoid fitting}
-
-\lettrine{O}{btaining sufficient samples} from an API-protected LLM is only the first step in finding the model ellipse. 
-The second step is to fit an ellipse to the samples.
-This, it turns out, is also difficult. 
-There has been progress over recent decades on fast algorithms for multi-dimensional ellipsoid fitting~\citep{Calafiore2002ApproximationON, Ying2012AFA}, however the best known method still requires \(O(d^6)\) time~\citep{Lin2016FastME} which is prohibitively polynomial, as illustrated in Figure~\ref{fig:eigh}.
-
-\begin{figure}
-  \centering
-  \small
-  \begin{tikzpicture}
-    \begin{axis}[
-        width=0.5\textwidth,
-        height=4cm,
-        xlabel={Dimension \(d\)},
-        ylabel={Time (seconds)},
-      ]
-      \addplot[only marks] table {data/times.dat};
-      \addplot[raw gnuplot] gnuplot {
-        f(x) = a * x ** 6 + b * x ** 5 + c * x ** 4 + d * x ** 3 + e * x ** 2 + f * x + g;
-        a = 1; b = 0; c = 0; d = 0; e = 0; f = 0; g = 0;
-        fit f(x) 'data/times.dat' using 1:2 via a,b,c,d,e,f,g;
-        plot[0:220] f(x);
-      };
-    \end{axis}
-  \end{tikzpicture}
-  \caption{
-    Pictured here are the runtimes for taking the eigendecomposition of the symmetric matrix 
-    composed of the quadratic terms of \(m\) \(d\)-dimensional points on an ellipsoid.
-    Times are obtained on an M1 MacBook Pro
-    using the \texttt{\_syevd} routine from LAPACK~\citep{laug} 
-    via NumPy's \texttt{linalg.eigh} function~\citep{harris2020array}.
-    This is the main computational bottleneck of the fastest known algorithm 
-    for fitting a multi-dimensional elliposid, which takes \(O(d^6)\) time. 
-    While still polynomial, this is a severe computational hurdle
-    when LLMs have embedding dimensions in the thousands.
-  }
-  \label{fig:eigh}
-\end{figure}
 
 \bibliographystyle{chicago-annote}
 \bibliography{refs}
