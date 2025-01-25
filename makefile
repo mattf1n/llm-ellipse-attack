@@ -26,11 +26,14 @@ data/pythia-70m/logits.pt data/pythia-70m/bias.pt: scripts/save_logits_and_param
 queries: scripts/make_batch_file.py
 	python $<
 	
-paper: tab/models.tex
+paper: tab/models.tex data/fit.table data/extrapolate.table
 	latexmk --pdf exact &> /dev/null; pplatex -i exact.log 
 
 tab/models.tex: scripts/cost_est.py
 	python $<
+
+overleaf/data/fit.table overleaf/data/extrapolate.table: overleaf/data/%.table: scripts/%.gnuplot data/times.dat
+	gnuplot $<
 
 clean:
 	latexmk -C exact
