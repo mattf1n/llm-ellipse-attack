@@ -1,0 +1,5 @@
+cvxpy
+mosek
+numpy>=2
+fire
+tqdm
