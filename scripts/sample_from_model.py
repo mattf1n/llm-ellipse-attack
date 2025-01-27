@@ -6,9 +6,22 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import matplotlib.pyplot as plt
 from get_ellipse import get_ellipse
 
+def batched(iterable, n):
+    "Batch data into tuples of length n. The last batch may be shorter."
+    # batched('ABCDEFG', 3) --> ABC DEF G
+    if n < 1:
+        raise ValueError('n must be at least one')
+    it = iter(iterable)
+    while batch :.= tuple(itertools.islice(it, n)):
+        yield batch
+
 
 batch_size = 1000
-device = "mps"
+device = (
+        "cuda" if torch.cuda.is_available() 
+        else "mps" if torch.backends.mps.is_available() 
+        else "cpu"
+        )
 with torch.inference_mode():
     tokenizer = AutoTokenizer.from_pretrained("roneneldan/TinyStories-1M")
     model = AutoModelForCausalLM.from_pretrained("roneneldan/TinyStories-1M")
@@ -19,7 +32,7 @@ with torch.inference_mode():
     gamma = model.transformer.ln_f.weight.cpu().numpy()
     beta = model.transformer.ln_f.bias.cpu().numpy()
     input_ids = np.arange(model.config.vocab_size)[:, None]
-    batches = itertools.batched(input_ids, batch_size)
+    batches = batched(input_ids, batch_size)
     logit_batches = []
     hidden_batches = []
     prenorm_batches = []
