@@ -3,3 +3,4 @@ mosek
 numpy>=2
 fire
 tqdm
+sklearn

@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.special import log_softmax
 from transformers import AutoTokenizer
+from sklearn.mixture import GaussianMixture
 
 tokenizer = AutoTokenizer.from_pretrained("roneneldan/TinyStories-1M")
 
@@ -25,27 +26,31 @@ def partition_on_mode(norms):
             mode1_token_ids.append(token_id)
         elif distance_from_mode1_mean >= 0.01:
             mode2_token_ids.append(token_id)
-    return mode1_token_ids, mode1_token_ids
+    return mode1_token_ids, mode2_token_ids
 
-mode1_token_ids, mode1_token_ids = partition_on_mode(norms)
+mode1_token_ids, mode2_token_ids = partition_on_mode(norms)
 
+def save_values_to_file(fname, *values):
+    with open(fname, "w") as file:
+        for vals in zip(*values):
+            print(*vals, sep="\t", file=file)
+
+# Find entropy distributions of each mode
 mode1_entropies = entropies[mode1_token_ids]
 mode2_entropies = entropies[mode2_token_ids]
-with open("data/mode1_entropies", "w") as file:
-    for entropy in mode1_entropies:
-        print(entropy, file=file)
-with open("data/mode2_entropies", "w") as file:
-    for entropy in mode2_entropies:
-        print(entropy, file=file)
+save_values_to_file("data/mode1_entropies", mode1_entropies)
+save_values_to_file("data/mode2_entropies", mode2_entropies)
 
-entropy_selected_norms = norms[np.abs(entropies - mode1_entropies.mean()) <= mode1_entropies.std() * 0.25]
+# Select norms based on entropy
+entropy_selected_norms = norms[np.abs(entropies - mode1_entropies.mean()) <= mode1_entropies.std() * 0.5]
 print("Mode 1 entropies std: ", mode1_entropies.std())
-with open("data/entropy_selected_norms.dat", "w") as file:
-    for norm in entropy_selected_norms:
-        print(norm, file=file)
+save_values_to_file("data/entropy_selected_norms.dat", entropy_selected_norms)
 
+# Partition entropy-selected tokens on norm again
 mode1_entropy_selected_token_ids, mode2_entropy_selected_token_ids = partition_on_mode(entropy_selected_norms)
-
+mode1_entropy_selected_tokens, mode2_entropy_selected_tokens = map(tokenizer.batch_decode, (mode1_entropy_selected_token_ids, mode2_entropy_selected_token_ids))
+save_values_to_file("data/entropy_selected_tokens_mode1.txt", mode1_entropy_selected_tokens)
+save_values_to_file("data/entropy_selected_tokens_mode2.txt", mode2_entropy_selected_tokens)
 
 selected_norms = norms[[tok[0] in [" ", ".", ","] for tok in tokenizer.batch_decode(list(range(len(norms))))]]
 with open("data/selected_norms.dat", "w") as file:
@@ -57,16 +62,12 @@ mode2_greedy_next_token_ids = greedy_next_token_ids[mode2_token_ids]
 
 mode1_tokens, mode2_tokens = map(tokenizer.batch_decode, (mode1_token_ids, mode2_token_ids))
 mode1_greedy_next_tokens, mode2_greedy_next_tokens = map(tokenizer.batch_decode, (mode1_greedy_next_token_ids, mode2_greedy_next_token_ids))
+mode1_greedy_next_tokens, mode2_greedy_next_tokens = map(tokenizer.batch_decode, (mode1_greedy_next_token_ids, mode2_greedy_next_token_ids))
 
 print("Next tokens only in mode 1")
 print(set(mode1_greedy_next_tokens) - set(mode2_greedy_next_tokens))
 print("Next tokens only in mode 2")
 print(set(mode2_greedy_next_tokens) - set(mode1_greedy_next_tokens))
-
-def save_values_to_file(fname, values):
-    with open(fname, "w") as file:
-        for value in values:
-            print(value, file=file)
 
 save_values_to_file("data/mode1_token_ids.txt", mode1_tokens)
 save_values_to_file("data/mode2_token_ids.txt", mode2_tokens)
@@ -97,10 +98,16 @@ pre_standard_norms = np.sqrt(
         norms ** 2 * 1e-5 
         / (1 - (norms ** 2 / hidden_states.shape[1]))
         )
+save_values_to_file("data/pre_std_norms.dat", pre_standard_norms)
 
-with open("data/pre_std_norms.dat", "w") as file:
-    for norm in pre_standard_norms:
-        print(norm, file=file)
+gm = GaussianMixture(n_components=2).fit(pre_standard_norms.reshape(-1, 1))
+
+print(f"{gm.weights_=}, {gm.means_=}, {gm.covariances_=}")
+
+domain = np.linspace(pre_standard_norms.min(), pre_standard_norms.max())
+gauss1, gauss2 = gm.predict_proba(domain.reshape(-1, 1)).transpose()
+save_values_to_file("data/gauss2_fit.dat", domain, gauss1)
+save_values_to_file("data/gauss1_fit.dat", domain, gauss2)
 
 
 """
