@@ -1,6 +1,12 @@
 cvxpy
 mosek
-numpy>=2
+numpy<2
 fire
 tqdm
-sklearn
+scikit-learn
+scipy
+datasets
+transformers
+jaxtyping
+zstandard
+jax

@@ -1,75 +1,93 @@
-import itertools, time
+import itertools as it, functools as ft, operator as op, time, os
 from tqdm import tqdm
 import numpy as np
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
 import matplotlib.pyplot as plt
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from datasets import load_dataset
+import fire
+from jaxtyping import Float, Array, Int
+
 from get_ellipse import get_ellipse
 
-def batched(iterable, n):
+
+def batched(iterable, n, strict=False):
     "Batch data into tuples of length n. The last batch may be shorter."
     # batched('ABCDEFG', 3) --> ABC DEF G
     if n < 1:
-        raise ValueError('n must be at least one')
-    it = iter(iterable)
-    while batch :.= tuple(itertools.islice(it, n)):
-        yield batch
+        raise ValueError("n must be at least one")
+    seq = iter(iterable)
+    while batch := tuple(it.islice(seq, n)):
+        if len(batch) == n or not strict:
+            yield batch
 
 
-batch_size = 1000
-device = (
-        "cuda" if torch.cuda.is_available() 
-        else "mps" if torch.backends.mps.is_available() 
-        else "cpu"
-        )
-with torch.inference_mode():
-    tokenizer = AutoTokenizer.from_pretrained("roneneldan/TinyStories-1M")
-    model = AutoModelForCausalLM.from_pretrained("roneneldan/TinyStories-1M")
-    model.to("mps")
+@torch.inference_mode()
+def inference(model, input_ids: Int[Array, "doc seq"], batch_size=1000):
+    device = (
+        "cuda"
+        if torch.cuda.is_available()
+        else "mps" if torch.backends.mps.is_available() else "cpu"
+    )
+    model.to(device)
     model.eval()
     print(model)
+    batches = batched(input_ids, batch_size)
+    logit_batches: list[Float[Array, "batch seq vocab"]] = []
+    hidden_batches: list[Float[Array, "batch seq hidden"]] = []
+    prenorm_batches: list[Float[Array, "batch seq hidden"]] = []
+    for batch in tqdm(map(np.array, batches)):
+        output = model(torch.tensor(batch, device=device), output_hidden_states=True)
+        logit_batches.append(output.logits.cpu().numpy())
+        hidden_batches.append(output.hidden_states[-1].cpu().numpy())
+        prenorm_batches.append(output.hidden_states[-2].cpu().numpy())
+    logits: Float[Array, "doc*seq vocab"] = np.vstack(logit_batches).reshape(-1, model.config.vocab_size)
+    hiddens: Float[Array, "doc*seq hidden"] = np.vstack(hidden_batches).reshape(
+        -1, model.config.hidden_size
+    )
+    prenorms: Float[Array, "doc*seq hidden"] = np.vstack(prenorm_batches).reshape(
+        -1, model.config.hidden_size
+    )
+    return logits, hiddens, prenorms
+
+
+@torch.inference_mode()
+def main(dataset=None, batch_size=1000):
+    tokenizer = AutoTokenizer.from_pretrained("roneneldan/TinyStories-1M")
+    model = AutoModelForCausalLM.from_pretrained("roneneldan/TinyStories-1M")
+
+    # Get model params
     W = model.lm_head.weight.cpu().numpy().T
     gamma = model.transformer.ln_f.weight.cpu().numpy()
     beta = model.transformer.ln_f.bias.cpu().numpy()
-    input_ids = np.arange(model.config.vocab_size)[:, None]
-    batches = batched(input_ids, batch_size)
-    logit_batches = []
-    hidden_batches = []
-    prenorm_batches = []
-    for batch in tqdm(map(np.array, batches)):
-        output = model(torch.tensor(batch, device=device), output_hidden_states=True)
-        logit_batches.append(output.logits[:, -1, :1000].cpu().numpy())
-        hidden_batches.append(output.hidden_states[-1][:, -1, :].cpu().numpy())
-        prenorm_batches.append(output.hidden_states[-2][:, -1, :].cpu().numpy())
 
-logits = np.vstack(logit_batches)
-hidden = np.vstack(hidden_batches)
-prenorm = np.vstack(prenorm_batches)
-np.savez(
-    "data/model_params.npz",
-    W=W,
-    gamma=gamma,
-    beta=beta,
-    logits=logits,
-    hidden=hidden,
-    prenorm=prenorm,
-)
-
-print(logits.shape)
-# logits = logits - np.mean(logits, axis=1, keepdims=True)
-rank = np.linalg.matrix_rank(logits, tol=1e-3)
-print("Rank is", rank)
-n = rank - 1
-
-for samples in [5000, 10_000, 20_000, 30_000, None]:
-    start = time.time()
-    S_pred, U_pred, bias_pred = get_ellipse(logits[:samples, :n])
-    seconds = time.time() - start
-    with open("data/times.dat", "a") as times:
-        print(samples, seconds, file=times)
+    if dataset is None:
+        input_ids = torch.arange(model.config.vocab_size)[:, None]
+    else:
+        data = load_dataset(dataset, streaming=True, trust_remote_code=True)["train"]
+        tokenized = iter(data.map(tokenizer, input_columns="text"))
+        input_id_seqs: Iterable[list[int]] = map(
+            op.itemgetter("input_ids"), tokenized
+        )
+        input_id_stream = it.chain.from_iterable(input_id_seqs)
+        seq_len = 512
+        collated_seq_stream: Iterable[Float[Array, "seq_len"]] = batched(
+            input_id_stream, seq_len, strict=True
+        )
+        input_ids = it.islice((torch.tensor(seq) for seq in collated_seq_stream), 100)
+    logits, hidden, prenorm = inference(model, input_ids, batch_size=batch_size)
+    dirname = "vocab" if dataset is None else os.path.basename(dataset)
+    os.makedirs(os.path.join("data", dirname), exist_ok=True)
     np.savez(
-        f"data/ellipse_pred_{samples}_samples.npz",
-        S_pred=S_pred,
-        U_pred=U_pred,
-        bias_pred=bias_pred,
+        f"data/{dirname}/model_params.npz",
+        W=W,
+        gamma=gamma,
+        beta=beta,
+        logits=logits,
+        hidden=hidden,
+        prenorm=prenorm,
     )
+
+
+if __name__ == "__main__":
+    fire.Fire(main)
