@@ -10,3 +10,4 @@ transformers
 jaxtyping
 zstandard
 jax
+jinja2>=3.1.2

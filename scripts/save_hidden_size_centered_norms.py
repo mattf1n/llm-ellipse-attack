@@ -35,7 +35,7 @@ def main(dataset="vocab"):
         stds = np.sqrt(gm.covariances_.squeeze().squeeze())
         gauss1 = weights[0] * scipy.stats.norm.pdf(domain, means[0], stds[0])
         gauss2 = weights[1] * scipy.stats.norm.pdf(domain, means[1], stds[1])
-        save_values_to_file(filename, domain, gauss1, gauss2)
+        save_values_to_file(filename, domain, gauss1, gauss2, gauss1 + gauss2)
 
     # Split into train and test tokens
     rng = np.random.default_rng()
@@ -65,9 +65,14 @@ def main(dataset="vocab"):
     print(f"{gm.converged_=}")
     save_gaussian_mixture_component_pdfs("gauss_fit.dat", gm, pre_standard_norms)
 
-    predictions = entropy_gm.predict(test_entropies.reshape(-1, 1)).astype(bool)
+    probs = entropy_gm.predict_proba(test_entropies.reshape(-1, 1))[:, 0]
+    save_values_to_file("dist1_probs.dat", probs)
+    predictions = probs > 0.90
     save_values_to_file("dist1_norms.dat", norms[test_tokens][predictions])
     save_values_to_file("dist2_norms.dat", norms[test_tokens][~predictions])
+
+    is_dist1 = entropy_gm.predict_proba(all_entropies.reshape(-1, 1))[:,0] > 0.90
+    np.savez("data/narrow_band_logits.npz", logits=data["logits"][is_dist1])
 
 
 if __name__ == "__main__":

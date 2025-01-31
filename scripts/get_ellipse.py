@@ -37,6 +37,13 @@ def get_transform(u, v):
     return R.T
 
 
+def isometric_transform(u):
+    dim = u.shape[-1]
+    transform = get_transform(np.ones(dim), np.arange(dim) == dim)[:, :ellipse_rank]
+    # TODO: check the ordering below (and indexing above)
+    return u @ transform 
+
+
 def Arc(resid, r, c):
     """Packs the residuals into an $r\\times c$ matrix by padding with zeros"""
     (k,) = resid.shape
