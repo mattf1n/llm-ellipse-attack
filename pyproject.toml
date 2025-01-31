@@ -1,0 +1,11 @@
+[project]
+name = "ellipse-attack"
+version = "0.0.0"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.black]
+line_length = 80
+

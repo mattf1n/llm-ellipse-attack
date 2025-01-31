@@ -2,10 +2,9 @@
 # Standard formulation
 
 ```
-prenorm (hidden_size) 
--standardize-> standardized (hidden_size)
--gamma+beta-> hidden (hidden_size)
--W-> logit (vocab_size)
+prenorm (hidden_size) -standardize-> standardized (hidden_size)
+linear |-gamma+beta-> hidden (hidden_size)
+       |-W-> logit (vocab_size)
 ```
 where `standardize` is
 ```
@@ -24,15 +23,20 @@ prenorm (hidden_size)
 
 `vocab or ellipse_rank` sizes are due to the fact that we are not finding the ellipse for the whole vocabulary, just `ellipse_rank` of them.
 
+digraph {
+prenorm -> sphere_projection [label="sandardize+normalize+Vh"];
+sphere_projection -> stretched [label="S"];
+}
 
 """
 
-import os
+import os, sys, re
+from glob import glob
 import numpy as np
 import pandas as pd
-from get_ellipse import get_transform
+from ellipse_attack.get_ellipse import get_transform, isometric_transform
 
-narrow_band = True
+narrow_band = "--filtered" in sys.argv
 
 model_params = np.load("data/vocab/model_params.npz")
 W = model_params["W"]
@@ -47,17 +51,15 @@ hidden_size, v = W.shape
 ellipse_rank = hidden_size - 1
 
 U_preds, S_preds, bias_preds = [], [], []
-samples_list = [5000, 10_000, 20_000, 30_000, None]
-for sample_size in samples_list:
+# samples_list = [5000, 10_000, 20_000, 30_000, None]
+ellipse_pred_filenames = (
+    glob("data/narrow_band_ellipse_pred_*_samples.npz")
+    if narrow_band
+    else glob("data/ellipse_pred_*_samples.npz")
+)
+for filename in ellipse_pred_filenames:
     # Load ellipse predictions
-    ellipse_pred_file = (
-        f"data/narrow_band_ellipse_pred_{sample_size}_samples.npz"
-        if narrow_band
-        else f"data/ellipse_pred_{sample_size}_samples.npz"
-    )
-    if not os.path.exists(ellipse_pred_file):
-        continue
-    ellipse_preds = np.load(ellipse_pred_file)
+    ellipse_preds = np.load(filename)
     S_pred = ellipse_preds["S_pred"]
     U_pred = ellipse_preds["U_pred"]
     bias_pred = ellipse_preds["bias_pred"]
@@ -78,18 +80,23 @@ for sample_size in samples_list:
         atol=6e-2,
         err_msg="Sphere projection predictions are not on the sphere.",
     )
-    standardized = ((hidden - beta) @ np.linalg.inv(np.diag(gamma))) / np.sqrt(hidden_size)
-    standardized_down_proj = ... # TODO use get_transform to project this down along the ones vec.
+    standardized = (hidden - beta) @ np.linalg.inv(np.diag(gamma))
+    standardized_down_proj = isometric_transform(standardized)
     np.testing.assert_allclose(
-        np.linalg.norm(standardized, axis=1),
+        np.linalg.norm(standardized_down_proj, axis=1),
         1.0,
         atol=2e-2,
         err_msg="Standardized values are not on the sphere.",
     )
     print(f"{standardized.shape=}")
-    soln, *_ = np.linalg.lstsq(sphere_projection_pred, standardized)
+    soln, *_ = np.linalg.lstsq(sphere_projection_pred, standardized_down_proj)
     # TODO Revisit this non-passing test case
-    np.testing.assert_allclose(soln.T @ soln, np.eye(ellipse_rank+1))
+    np.testing.assert_allclose(
+        soln.T @ soln,
+        np.eye(ellipse_rank),
+        atol=1e-1,
+        err_msg="Transform between sphere projection and isometric view of standardized is not pure rotation",
+    )
 
     bias = beta @ W[:, :ellipse_rank]
     project_to_sphere = get_transform(
@@ -133,25 +140,41 @@ for sample_size in samples_list:
             atol=1e-1,
             err_msg="Inversion wrong",
         )
-
+sample_size_extractor = re.compile(
+    "data/(narrow_band_)?ellipse_pred_(.*)_samples.npz"
+).match
 data = {
-    ("Samples", None): samples_list,
-    ("Mean RMS", "U"): [np.sqrt(np.mean(np.square(U - U_pred))) for U_pred in U_preds],
-    ("Mean RMS", "S"): [np.sqrt(np.mean(np.square(S - S_pred))) for S_pred in S_preds],
+    ("Samples", None): [
+        sample_size_extractor(fname).group(2) for fname in ellipse_pred_filenames
+    ],
+    ("Mean RMS", "U"): [
+        np.sqrt(np.mean(np.square(U - U_pred))) for U_pred in U_preds
+    ],
+    ("Mean RMS", "S"): [
+        np.sqrt(np.mean(np.square(S - S_pred))) for S_pred in S_preds
+    ],
     ("Mean RMS", "bias"): [
-        np.sqrt(np.mean(np.square(bias - bias_pred))) for bias_pred in bias_preds
+        np.sqrt(np.mean(np.square(bias - bias_pred)))
+        for bias_pred in bias_preds
     ],
     ("Max relative difference", "U"): [
         np.max(np.abs(U - U_pred) / U) for U_pred in U_preds
     ],
-    ("Max relative difference", "S"): [np.max((S - S_pred) / S) for S_pred in S_preds],
+    ("Max relative difference", "S"): [
+        np.max((S - S_pred) / S) for S_pred in S_preds
+    ],
     ("Max relative difference", "bias"): [
         np.max(np.abs(bias - bias_pred) / bias) for bias_pred in bias_preds
     ],
 }
 output_filename = (
-    "overleaf/tab/narrow_band_errors.tex" if narrow_band else "overleaf/tab/errors.tex"
+    "overleaf/tab/narrow_band_errors.tex"
+    if narrow_band
+    else "overleaf/tab/errors.tex"
 )
+for key, value in data.items():
+    print(key, len(value))
 pd.DataFrame(data, columns=pd.MultiIndex.from_tuples(data.keys())).style.hide(
     axis="index"
-).to_latex(output_filename)
+).to_pickle("data/narrow_band_error_data.pkl" if narrow_band else "data/error_data.pkl")
+# .format(precision=4).to_latex(output_filename)

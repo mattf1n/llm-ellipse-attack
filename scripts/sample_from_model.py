@@ -8,7 +8,7 @@ from datasets import load_dataset
 import fire
 from jaxtyping import Float, Array, Int
 
-from get_ellipse import get_ellipse
+from ellipse_attack.get_ellipse import get_ellipse
 
 
 def batched(iterable, n, strict=False):

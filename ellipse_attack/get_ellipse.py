@@ -1,6 +1,7 @@
 import math
 import numpy as np
 import cvxpy as cp
+from jaxtyping import Num, Array
 
 
 def get_ellipse(x):
@@ -37,11 +38,11 @@ def get_transform(u, v):
     return R.T
 
 
-def isometric_transform(u):
+def isometric_transform(u: Num[Array, "... N"]) -> Num[Array, "... N-1"]:
     dim = u.shape[-1]
-    transform = get_transform(np.ones(dim), np.arange(dim) == dim)[:, :ellipse_rank]
-    # TODO: check the ordering below (and indexing above)
-    return u @ transform 
+    one_hot_final = np.arange(dim) == 0
+    transform = get_transform(np.ones(dim), one_hot_final)
+    return u @ transform[:, 1:]
 
 
 def Arc(resid, r, c):
