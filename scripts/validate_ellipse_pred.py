@@ -36,7 +36,7 @@ import numpy as np
 import pandas as pd
 from ellipse_attack.get_ellipse import get_transform, isometric_transform
 
-narrow_band = "--filtered" in sys.argv
+narrow_band = "--filter" in sys.argv
 
 model_params = np.load("data/vocab/model_params.npz")
 W = model_params["W"]
@@ -174,7 +174,5 @@ output_filename = (
 )
 for key, value in data.items():
     print(key, len(value))
-pd.DataFrame(data, columns=pd.MultiIndex.from_tuples(data.keys())).style.hide(
-    axis="index"
-).to_pickle("data/narrow_band_error_data.pkl" if narrow_band else "data/error_data.pkl")
+pd.DataFrame(data, columns=pd.MultiIndex.from_tuples(data.keys())).to_pickle("data/narrow_band_error_data.pkl" if narrow_band else "data/error_data.pkl")
 # .format(precision=4).to_latex(output_filename)

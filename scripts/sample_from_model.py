@@ -31,13 +31,13 @@ def inference(model, input_ids: Int[Array, "doc seq"], batch_size=1000):
     )
     model.to(device)
     model.eval()
-    print(model)
     batches = batched(input_ids, batch_size)
     logit_batches: list[Float[Array, "batch seq vocab"]] = []
     hidden_batches: list[Float[Array, "batch seq hidden"]] = []
     prenorm_batches: list[Float[Array, "batch seq hidden"]] = []
-    for batch in tqdm(map(np.array, batches)):
-        output = model(torch.tensor(batch, device=device), output_hidden_states=True)
+    for batch in tqdm(batches, desc="Running inference"):
+        batch_tensor = torch.tensor(batch, device=device)[:, None]
+        output = model(batch_tensor, output_hidden_states=True)
         logit_batches.append(output.logits.cpu().numpy())
         hidden_batches.append(output.hidden_states[-1].cpu().numpy())
         prenorm_batches.append(output.hidden_states[-2].cpu().numpy())

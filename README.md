@@ -1,3 +1,5 @@
+# LLM-Ellipse-Attack
+
 Description of files
 
 - `scripts/ying.py`: Fits ellipse to random weights via Ying's method and CVXPY.
@@ -10,3 +12,8 @@ Description of files
 - `scripts/openai_batch_inference/`: scripts for batch inference with OpenAI.
 - `scripts/lstsq_fitting`: loads samples from model and computes ellipse using `torch.linalg.solve`. Deprecated.
 - `scripts/nanoGPT`: scripts for training a tiny LM.
+
+## Reseach progress
+
+We can isolate a set of next-token distributions with low-variance post-center norms.
+Do these give smaller error when solving for bias and singular values?

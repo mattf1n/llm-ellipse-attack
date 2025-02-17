@@ -3,11 +3,12 @@ mosek
 numpy<2
 fire
 tqdm
-scikit-learn
+scikit-learn>=1.3
 scipy
 datasets
 transformers
-jaxtyping
 zstandard
 jax
+jaxlib
+jaxtyping
 jinja2>=3.1.2
