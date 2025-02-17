@@ -52,7 +52,7 @@ def Arc(resid, r, c):
         block = resid
     else:
         block = cp.bmat([[resid, np.zeros(r * c - k)]])
-    return cp.reshape(block, (r, c))
+    return cp.reshape(block, (r, c), order="C")
 
 
 def residuals(x, Q):
