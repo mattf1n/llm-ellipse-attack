@@ -9,3 +9,7 @@ build-backend = "hatchling.build"
 [tool.black]
 line_length = 80
 
+[tool.pytest.ini_options]
+testpaths = [
+    "test",
+]

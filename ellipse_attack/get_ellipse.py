@@ -4,11 +4,18 @@ import cvxpy as cp
 from jaxtyping import Num, Array
 
 
-def get_ellipse(x):
+def get_ellipse(x, **kwargs):
+    """
+    Takes a set of k points on an n-dimensions sphere and computes
+    C: ??
+    U: the rotation
+    S: the singular values
+    bias: the bias
+    """
     k, n = x.shape
     r = c = math.ceil(math.sqrt(k))
 
-    A, b, dee = fit_ellipse(x, n, r, c)
+    A, b, dee = fit_ellipse(x, n, r, c, **kwargs)
     bias = -np.linalg.inv(A) @ b
     r_squared = np.abs(bias @ A @ bias - dee)
     C = A / r_squared
@@ -17,32 +24,6 @@ def get_ellipse(x):
     Vh, S, U_ = np.linalg.svd(linear)
     U = np.diag((U_[:, 0] > 0) * 2 - 1) @ U_
     return C, S, U, bias
-
-
-def reflect(A, n):
-    """Utility for `get_transform`"""
-    return A - 2 * np.outer(n, (n @ A) / (n @ n))
-
-
-def get_transform(u, v):
-    """
-    Takes two vectors $u$ and $v$ and returns a matrix that maps $u$ into $v$
-    by rotating about the vector $u\\times v$.
-    """
-    u_norm = np.linalg.norm(u)
-    v_norm = np.linalg.norm(v)
-    u = u / u_norm
-    v = v / v_norm
-    S = reflect(np.eye(len(u)), u + v)
-    R = reflect(S, v) * v_norm / u_norm
-    return R.T
-
-
-def isometric_transform(u: Num[Array, "... N"]) -> Num[Array, "... N-1"]:
-    dim = u.shape[-1]
-    one_hot_final = np.arange(dim) == 0
-    transform = get_transform(np.ones(dim), one_hot_final)
-    return u @ transform[:, 1:]
 
 
 def Arc(resid, r, c):
@@ -61,7 +42,7 @@ def residuals(x, Q):
     return cp.sum(cp.multiply(x_bias @ Q, x_bias), axis=1)
 
 
-def fit_ellipse(x, n, r, c):
+def fit_ellipse(x, n, r, c, **kwargs):
     """
     Takes $k\\times d$ data matrix containing points on an ellipsoid
     and returns A, b, d such that
@@ -88,5 +69,6 @@ def fit_ellipse(x, n, r, c):
     ]
     objective = cp.Minimize(t)
     problem = cp.Problem(objective, constraints)
-    problem.solve(solver="MOSEK", canon_backend="CPP", verbose=True)
+    kwargs = dict(solver="MOSEK", canon_backend="CPP", verbose=True) | kwargs
+    problem.solve(**kwargs)
     return A.value, b.value, d.value
