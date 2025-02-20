@@ -9,8 +9,8 @@ def assert_rotation(a, b):
 
 
 def test_lstsq_pinv_equiv():
-    A = rng.standard_normal((5,4))
-    B = rng.standard_normal((5,5))
+    A = rng.standard_normal((5, 4))
+    B = rng.standard_normal((5, 5))
     C, *_ = np.linalg.lstsq(A, B, rcond=None)
     D = np.linalg.pinv(A) @ B
     np.testing.assert_allclose(C, D)
@@ -38,33 +38,26 @@ def test_ellipse_of_model():
 def test_ellipse_of_model_linear_term():
     ellipse = model.ellipse()
     model_side = (
-        tfm.isometric_transform_inverse(emb_size)
+        tfm.isom_inv(emb_size)
         @ np.diag(model.stretch)
         @ model.unembed
-        @ model.center
+        @ tfm.center(vocab_size)
         @ np.linalg.pinv(ellipse.up_proj)
     )
-    ellipse_side = (
-        ellipse.rot1 
-        @ np.diag(ellipse.stretch) 
-        @ ellipse.rot2 
-    )
+    ellipse_side = ellipse.rot1 @ np.diag(ellipse.stretch) @ ellipse.rot2
     np.testing.assert_allclose(model_side, ellipse_side)
 
 
 def test_ellipse_of_model_linear_term_test_point():
     model_side = (
-        sphere_point
-        @ np.diag(model.stretch)
-        @ model.unembed
-        @ model.center
+        sphere_point @ np.diag(model.stretch) @ model.unembed @ tfm.center(vocab_size)
     )
     ellipse_side = (
         sphere_point
         @ isom
-        @ ellipse.rot1 
-        @ np.diag(ellipse.stretch) 
-        @ ellipse.rot2 
+        @ ellipse.rot1
+        @ np.diag(ellipse.stretch)
+        @ ellipse.rot2
         @ ellipse.up_proj
     )
     np.testing.assert_allclose(model_side, ellipse_side, rtol=1e-10)
@@ -80,11 +73,9 @@ def test_ellipse_up_proj_pinv():
 
 
 def test_isometric_transform_inverse():
-    isom_inv = tfm.isometric_transform_inverse(emb_size)
-    centered = tfm.centering_matrix(emb_size)
-    np.testing.assert_allclose(
-        centered @ isom @ isom_inv, centered, atol=1e-10
-    )
+    isom_inv = tfm.isom_inv(emb_size)
+    centered = tfm.center(emb_size)
+    np.testing.assert_allclose(centered @ isom @ isom_inv, centered, atol=1e-10)
 
 
 def test_isometric_transform_mean_invariance():
@@ -98,38 +89,58 @@ def test_isometric_transform_mean_invariance():
     )
 
 
-def test_isometric_transform_matrix_zeros_first_entry():
-    n = 100
-    vector = np.arange(n) - np.arange(n).mean()
-    assert vector.sum() == 0
-    isom = tfm._isometric_transform_matrix_square(n)
-    np.testing.assert_allclose((vector @ isom)[0], 0, atol=1e-10)
-    np.testing.assert_allclose(
-        (vector @ isom) @ np.linalg.inv(isom), vector, atol=1e-10
-    )
-
-
 def test_centering_matrix():
     n = 100
     vector = np.arange(n)
-    center = tfm.centering_matrix(n)
+    center = tfm.center(n)
     np.testing.assert_allclose(
         vector - vector.mean(), vector @ center, atol=1e-10
     )
 
 
+def test_alr_transform():
+    test_logprobs = model(stnd_test_data)
+    logits1 = (test_logprobs - test_logprobs[:, [0]])[:, 1:emb_size]
+    logits2 = (
+        test_logprobs
+        @ np.eye(vocab_size, emb_size)
+        @ tfm.alr_transform(emb_size)
+    )
+    np.testing.assert_allclose(
+        test_logprobs @ np.eye(vocab_size, emb_size),
+        test_logprobs[:, :emb_size],
+    )
+    np.testing.assert_allclose(
+        test_logprobs @ np.eye(vocab_size, emb_size),
+        test_logprobs[:, :emb_size],
+    )
+    np.testing.assert_allclose(
+        test_logprobs
+        @ (np.eye(vocab_size) - tfm.one_hot(vocab_size, 0)[:, None]),
+        test_logprobs - test_logprobs[:, [0]],
+    )
+    np.testing.assert_allclose(logits1, logits2)
+
+
 def test_ellipse_from_data():
-    from_data = tfm.Ellipse.from_data(test_logprobs, emb_size=emb_size, verbose=False)
-    from_model = model.ellipse(up_proj_inv=from_data.up_proj_inv)
+    test_logprobs = model(stnd_test_data)
+    from_data = tfm.Ellipse.from_data(
+        test_logprobs, emb_size=emb_size, verbose=False
+    )
+    from_model = model.ellipse(down_proj=tfm.alr_transform(vocab_size)[:, :emb_size-1])
+    np.testing.assert_allclose(from_data.up_proj @ tfm.alr_transform(vocab_size)[:, :emb_size-1], np.eye(emb_size - 1), atol=1e-10)
+    np.testing.assert_allclose(from_model.up_proj @ tfm.alr_transform(vocab_size)[:, :emb_size-1], np.eye(emb_size - 1), atol=1e-10)
+    np.testing.assert_allclose(from_data.bias, from_model.bias)
     np.testing.assert_allclose(from_data.up_proj, from_model.up_proj)
     np.testing.assert_allclose(from_data.stretch, from_model.stretch)
+    np.testing.assert_allclose(from_data.rot2, from_model.rot2)
 
 
 emb_size = 10
 vocab_size = 100
 scale = 10
 sample_size = pow(emb_size, 2)
-isom = tfm.isometric_transform_matrix(emb_size)
+isom = tfm.isom(emb_size)
 rng = np.random.default_rng(10)
 model = tfm.Model(
     stretch=rng.normal(size=emb_size, scale=scale),
@@ -142,4 +153,3 @@ sphere_point = tfm.standardize(test_point)
 
 test_data = rng.normal(size=(sample_size, emb_size), scale=scale)
 stnd_test_data = tfm.standardize(test_data)
-test_logprobs = model(stnd_test_data)

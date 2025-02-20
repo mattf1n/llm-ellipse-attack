@@ -18,7 +18,7 @@ class Ellipse:
         rot1 = np.eye(emb_size - 1) if self.rot1 is None else self.rot1
         return (
             sphere
-            @ isometric_transform_matrix(emb_size)
+            @ isom(emb_size)
             @ rot1
             @ np.diag(self.stretch)
             @ self.rot2
@@ -26,25 +26,21 @@ class Ellipse:
             + self.bias
         )
 
-    @property
-    def up_proj_inv(self):
-        return np.linalg.pinv(self.up_proj)
-
     @classmethod
     def from_data(
-        cls, logprobs: Num[Array, "sample vocab"], emb_size=None, **kwargs
+        cls, logprobs: Num[Array, "sample vocab"], emb_size: int, **kwargs
     ):
-        if emb_size is None:
-            emb_size = logprobs.shape[1]
-        # ALR transform: subtract first logprob, drop first logprob
-        logits = (logprobs - logprobs[:, [0]])[:, 1:emb_size]
-        up_proj = np.linalg.pinv(logits) @ logprobs
-        _, rot2, stretch, bias = get_ellipse(logits, **kwargs)
+        vocab_size = logprobs.shape[1]
+        down_proj = alr_transform(vocab_size)[:, :emb_size-1]
+        logits = (logprobs - logprobs[0]) @ down_proj
+        up_proj = np.linalg.pinv(logits) @ (logprobs - logprobs[0])
+        np.testing.assert_allclose(logits @ up_proj + logprobs[0], logprobs)
+        _, stretch, rot2, bias = get_ellipse(logits, **kwargs)
         return cls(
             up_proj=up_proj,
-            bias=bias,
+            bias=bias @ up_proj + logprobs[0],
             rot1=None,
-            stretch=np.diag(stretch),
+            stretch=stretch,
             rot2=rot2,
         )
 
@@ -56,24 +52,22 @@ class Model:
     unembed: Num[Array, "emb vocab"]
 
     def __call__(self, sphere):
-        return (sphere * self.stretch + self.bias) @ self.unembed @ self.center
+        return (sphere * self.stretch + self.bias) @ self.unembed @ center(self.unembed.shape[1])
 
-    @property
-    def center(self) -> Num[Array, "vocab vocab"]:
-        return centering_matrix(self.unembed.shape[1])
-
-    def ellipse(self, up_proj_inv=None):
-        bias = self.bias @ self.unembed @ self.center
+    def ellipse(self, down_proj=None):
         emb_size, vocab_size = self.unembed.shape
-        linear = np.diag(self.stretch) @ self.unembed @ self.center
-        if up_proj_inv is None:
-            up_proj_inv = np.eye(vocab_size, emb_size - 1)
-        std_ctr = centering_matrix(emb_size) @ linear
-        up_proj = np.linalg.pinv(std_ctr @ up_proj_inv) @ std_ctr
-        isom_inv: Num[Array, "emb-1 emb"] = isometric_transform_inverse(emb_size)
+        linear = np.diag(self.stretch) @ self.unembed @ center(vocab_size)
+        if down_proj is None:
+            down_proj = np.eye(vocab_size, emb_size - 1)
+        std_ctr = center(emb_size) @ linear @ center(vocab_size)
+        up_proj = np.linalg.pinv(std_ctr @ down_proj) @ std_ctr
         rot1, stretch, rot2 = np.linalg.svd(
-            isom_inv @ linear @ up_proj_inv, full_matrices=False
+            isom_inv(emb_size) @ linear @ down_proj, full_matrices=False
         )
+        # Ensure leading entries of rot2 are always positive
+        signs = (rot2[:, [0]] >= 0) * 2 - 1
+        rot1, rot2 = signs.T * rot1, signs * rot2
+        bias = self.bias @ self.unembed @ center(vocab_size)
         return Ellipse(
             up_proj=up_proj,
             bias=bias,
@@ -82,10 +76,12 @@ class Model:
             rot2=rot2,
         )
 
+
 def standardize(x: Num[Array, "... N"]) -> Num[Array, "... N"]:
     return (x - x.mean(axis=-1, keepdims=True)) / np.sqrt(
         x.var(axis=-1, keepdims=True)
     )
+
 
 def reflect(A, n):
     """Utility for `get_transform`"""
@@ -113,20 +109,24 @@ def isometric_transform(u: Num[Array, "... N"]) -> Num[Array, "... N-1"]:
     return u @ transform[:, 1:]
 
 
-def _isometric_transform_matrix_square(n: int):
-    one_hot_first = np.arange(n) == 0
-    transform = get_transform(np.ones(n), one_hot_first)
-    return transform
+def one_hot(size, n):
+    return np.arange(size) == n
 
-def isometric_transform_matrix(n: int):
-    return _isometric_transform_matrix_square(n)[:, 1:]
 
-def isometric_transform_inverse(n: int):
-    centered = centering_matrix(n)
-    isom = isometric_transform_matrix(n) 
-    isom_inv = np.linalg.pinv(centered @ isom) @ centered
-    return isom_inv
+def alr_transform(size):
+    """ALR transform: subtract first logprob, drop first logprob"""
+    return (np.eye(size) - one_hot(size, 0).reshape(-1, 1))[:, 1:]
 
-def centering_matrix(n: int):
+
+def isom(n: int):
+    return get_transform(np.ones(n), one_hot(n, 0))[:, 1:]
+
+
+def center(n: int):
     return np.eye(n) - np.ones(n) / n
+
+
+def isom_inv(n: int):
+    return np.linalg.pinv(center(n) @ isom(n)) @ center(n)
+
 
