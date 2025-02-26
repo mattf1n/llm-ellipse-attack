@@ -111,10 +111,6 @@ def test_alr_transform():
         test_logprobs[:, :emb_size],
     )
     np.testing.assert_allclose(
-        test_logprobs @ np.eye(vocab_size, emb_size),
-        test_logprobs[:, :emb_size],
-    )
-    np.testing.assert_allclose(
         test_logprobs
         @ (np.eye(vocab_size) - tfm.one_hot(vocab_size, 0)[:, None]),
         test_logprobs - test_logprobs[:, [0]],
@@ -127,9 +123,10 @@ def test_ellipse_from_data():
     from_data = tfm.Ellipse.from_data(
         test_logprobs, emb_size=emb_size, verbose=False
     )
-    from_model = model.ellipse(down_proj=tfm.alr_transform(vocab_size)[:, :emb_size-1])
-    np.testing.assert_allclose(from_data.up_proj @ tfm.alr_transform(vocab_size)[:, :emb_size-1], np.eye(emb_size - 1), atol=1e-10)
-    np.testing.assert_allclose(from_model.up_proj @ tfm.alr_transform(vocab_size)[:, :emb_size-1], np.eye(emb_size - 1), atol=1e-10)
+    down_proj = tfm.alr_transform(vocab_size)[:, :emb_size-1]
+    from_model = model.ellipse(down_proj=down_proj)
+    np.testing.assert_allclose(from_data.up_proj @ down_proj, np.eye(emb_size - 1), atol=1e-10)
+    np.testing.assert_allclose(from_model.up_proj @ down_proj, np.eye(emb_size - 1), atol=1e-10)
     np.testing.assert_allclose(from_data.bias, from_model.bias)
     np.testing.assert_allclose(from_data.up_proj, from_model.up_proj)
     np.testing.assert_allclose(from_data.stretch, from_model.stretch)

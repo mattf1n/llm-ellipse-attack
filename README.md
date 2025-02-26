@@ -10,7 +10,6 @@ Description of files
 - `scripts/cost_est.py`: estimating the cost of inference to obtain the ellipse for various models.
 - `scripts/centering.py`: shows what subtracting the mean does.
 - `scripts/openai_batch_inference/`: scripts for batch inference with OpenAI.
-- `scripts/lstsq_fitting`: loads samples from model and computes ellipse using `torch.linalg.solve`. Deprecated.
 - `scripts/nanoGPT`: scripts for training a tiny LM.
 
 
@@ -35,3 +34,8 @@ python scripts/time_ellipse_solving.py [--filter]
 # The `--filter` flag uses the low-variance outputs
 python scripts/validate_ellipse_pred.py [--filter]
 ```
+
+## Deprecated files
+
+- `scripts/lstsq_fitting`: loads samples from model and computes ellipse using `torch.linalg.solve`. Deprecated.
+
