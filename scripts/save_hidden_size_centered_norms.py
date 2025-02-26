@@ -9,10 +9,9 @@ from tqdm import tqdm
 from ellipse_attack.transformations import Model
 
 
-def main(dataset="vocab"):
+def main(dataset="single_token_prompts"):
     tokenizer = AutoTokenizer.from_pretrained("roneneldan/TinyStories-1M")
-
-    data = np.load(f"data/{dataset}/model_params.npz")
+    data = np.load(f"data/{dataset}/outputs.npz")
     final_layer = Model(**np.load(f"data/model/TinyStories-1M.npz"))
     outdir = os.path.join("overleaf", "data", dataset)
     os.makedirs(outdir, exist_ok=True)

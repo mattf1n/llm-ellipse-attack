@@ -79,10 +79,10 @@ def main(dataset=None, batch_size=1000):
         )
         input_ids = it.islice((torch.tensor(seq) for seq in collated_seq_stream), 100)
     logits, hidden, prenorm = inference(model, input_ids, batch_size=batch_size)
-    dirname = "vocab" if dataset is None else os.path.basename(dataset)
+    dirname = "single_token_prompts" if dataset is None else os.path.basename(dataset)
     os.makedirs(os.path.join("data", dirname), exist_ok=True)
     np.savez(
-        f"data/{dirname}/model_params.npz",
+        f"data/{dirname}/outputs.npz",
         logits=logits,
         hidden=hidden,
         prenorm=prenorm,

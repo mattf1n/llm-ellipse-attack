@@ -1,0 +1,11 @@
+x sample from model
+x write test for rank of outputs
+x extract narrow band
+x look for errors in fit ellipse code
+- test rank of model outputs
+try running locally in case faster
+
+exclude ink-titan from test
+fit ellipse
+fit narrow band ellipse
+

@@ -16,7 +16,7 @@ logprobs = scipy.special.log_softmax(logits, axis=-1)
 ellipse_rank = hidden_size - 1
 
 sample_sizes = [5000, 10_000, 20_000, 30_000, 100_000]
-for samples in (
+for sample_size in (
     *it.takewhile(lambda n: n <= logits.shape[0], sample_sizes),
     None,
 ):
@@ -26,10 +26,10 @@ for samples in (
     seconds = time.time() - start
     outfile = "data/narrow_band_times.dat" if narrow_band else "data/times.dat"
     with open(outfile, "a") as times:
-        print(samples, seconds, file=times)
+        print(sample_size, seconds, file=times)
     npz_file = (
-        f"data/narrow_band_ellipse_pred_{samples}_samples.npz"
+        f"data/narrow_band_ellipse_pred_{sample_size}_samples.npz"
         if narrow_band
-        else f"data/ellipse_pred_{samples}_samples.npz"
+        else f"data/ellipse_pred_{sample_size}_samples.npz"
     )
-    np.savez(f"data/narrow_band_ellipse_pred_{samples}_samples.npz", **ellipse)
+    np.savez(f"data/narrow_band_ellipse_pred_{sample_size}_samples.npz", **ellipse)
