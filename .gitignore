@@ -4,3 +4,9 @@ overleaf
 __pycache__
 tags
 data
+.python-version
+*.npy 
+*.jsonl 
+*.log
+*.swp
+*.egg-info
