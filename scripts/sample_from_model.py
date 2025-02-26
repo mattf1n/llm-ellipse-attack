@@ -1,4 +1,5 @@
 import itertools as it, functools as ft, operator as op, time, os
+from dataclasses import asdict
 from tqdm import tqdm
 import numpy as np
 import torch
@@ -8,7 +9,7 @@ from datasets import load_dataset
 import fire
 from jaxtyping import Float, Array, Int
 
-from ellipse_attack.get_ellipse import get_ellipse
+from ellipse_attack.transformations import Model
 
 
 def batched(iterable, n, strict=False):
@@ -56,10 +57,12 @@ def main(dataset=None, batch_size=1000):
     tokenizer = AutoTokenizer.from_pretrained("roneneldan/TinyStories-1M")
     model = AutoModelForCausalLM.from_pretrained("roneneldan/TinyStories-1M")
 
-    # Get model params
+    # Get and save model params
     W = model.lm_head.weight.cpu().numpy().T
     gamma = model.transformer.ln_f.weight.cpu().numpy()
     beta = model.transformer.ln_f.bias.cpu().numpy()
+    final_layer = Model(stretch=gamma, bias=beta, unembed=W)
+    np.savez("data/model/TinyStories-1M.npz", **asdict(final_layer))
 
     if dataset is None:
         input_ids = torch.arange(model.config.vocab_size)[:, None]
@@ -80,9 +83,6 @@ def main(dataset=None, batch_size=1000):
     os.makedirs(os.path.join("data", dirname), exist_ok=True)
     np.savez(
         f"data/{dirname}/model_params.npz",
-        W=W,
-        gamma=gamma,
-        beta=beta,
         logits=logits,
         hidden=hidden,
         prenorm=prenorm,

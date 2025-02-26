@@ -20,8 +20,9 @@ for samples in (
     *it.takewhile(lambda n: n <= logits.shape[0], sample_sizes),
     None,
 ):
+    print(f"Sample size {sample_size}")
     start = time.time()
-    ellipse = Ellipse.from_data(logprobs, hidden_size)
+    ellipse = Ellipse.from_data(logprobs, hidden_size, verbose=True)
     seconds = time.time() - start
     outfile = "data/narrow_band_times.dat" if narrow_band else "data/times.dat"
     with open(outfile, "a") as times:

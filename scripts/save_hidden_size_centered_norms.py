@@ -6,16 +6,18 @@ from transformers import AutoTokenizer
 from sklearn.mixture import BayesianGaussianMixture
 import fire
 from tqdm import tqdm
+from ellipse_attack.transformations import Model
 
 
 def main(dataset="vocab"):
     tokenizer = AutoTokenizer.from_pretrained("roneneldan/TinyStories-1M")
 
     data = np.load(f"data/{dataset}/model_params.npz")
+    final_layer = Model(**np.load(f"data/model/TinyStories-1M.npz"))
     outdir = os.path.join("overleaf", "data", dataset)
     os.makedirs(outdir, exist_ok=True)
     print(data)
-    hidden_states = (data["hidden"] - data["beta"]) / data["gamma"]
+    hidden_states = (data["hidden"] - final_layer.bias) / final_layer.stretch
     print(hidden_states.shape)
 
     def save_values_to_file(fname, *values):
