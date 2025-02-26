@@ -2,6 +2,7 @@ import itertools as it, functools as ft, operator as op, time, os
 from dataclasses import asdict
 from tqdm import tqdm
 import numpy as np
+import scipy
 import torch
 import matplotlib.pyplot as plt
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -43,13 +44,14 @@ def inference(model, input_ids: Int[Array, "doc seq"], batch_size=1000):
         hidden_batches.append(output.hidden_states[-1].cpu().numpy())
         prenorm_batches.append(output.hidden_states[-2].cpu().numpy())
     logits: Float[Array, "doc*seq vocab"] = np.vstack(logit_batches).reshape(-1, model.config.vocab_size)
+    logprobs = scipy.special.log_softmax(logits, axis=-1)
     hiddens: Float[Array, "doc*seq hidden"] = np.vstack(hidden_batches).reshape(
         -1, model.config.hidden_size
     )
     prenorms: Float[Array, "doc*seq hidden"] = np.vstack(prenorm_batches).reshape(
         -1, model.config.hidden_size
     )
-    return logits, hiddens, prenorms
+    return logprobs, logits, hiddens, prenorms
 
 
 @torch.inference_mode()
@@ -78,11 +80,12 @@ def main(dataset=None, batch_size=1000):
             input_id_stream, seq_len, strict=True
         )
         input_ids = it.islice((torch.tensor(seq) for seq in collated_seq_stream), 100)
-    logits, hidden, prenorm = inference(model, input_ids, batch_size=batch_size)
+    logprobs, logits, hidden, prenorm = inference(model, input_ids, batch_size=batch_size)
     dirname = "single_token_prompts" if dataset is None else os.path.basename(dataset)
     os.makedirs(os.path.join("data", dirname), exist_ok=True)
     np.savez(
         f"data/{dirname}/outputs.npz",
+        logprobs=logprobs,
         logits=logits,
         hidden=hidden,
         prenorm=prenorm,
