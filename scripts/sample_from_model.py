@@ -62,6 +62,7 @@ def main(dataset=None, batch_size=1000):
     gamma = model.transformer.ln_f.weight.cpu().numpy()
     beta = model.transformer.ln_f.bias.cpu().numpy()
     final_layer = Model(stretch=gamma, bias=beta, unembed=W)
+    os.path.makedirs("data/model", exist_ok=True)
     np.savez("data/model/TinyStories-1M.npz", **asdict(final_layer))
 
     if dataset is None:

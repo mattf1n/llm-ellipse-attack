@@ -1,3 +1,4 @@
+import sys
 import numpy as np
 import ellipse_attack.transformations as tfm
 
@@ -42,6 +43,7 @@ def test_ellipse_of_model_linear_term():
         @ np.diag(model.stretch)
         @ model.unembed
         @ tfm.center(vocab_size)
+        @ tfm.ctr_to_alr(vocab_size)
         @ np.linalg.pinv(ellipse.up_proj)
     )
     ellipse_side = ellipse.rot1 @ np.diag(ellipse.stretch) @ ellipse.rot2
@@ -51,6 +53,7 @@ def test_ellipse_of_model_linear_term():
 def test_ellipse_of_model_linear_term_test_point():
     model_side = (
         sphere_point @ np.diag(model.stretch) @ model.unembed @ tfm.center(vocab_size)
+        @ tfm.ctr_to_alr(vocab_size)
     )
     ellipse_side = (
         sphere_point
@@ -98,37 +101,14 @@ def test_centering_matrix():
     )
 
 
-def test_alr_transform():
-    test_logprobs = model(stnd_test_data)
-    logits1 = (test_logprobs - test_logprobs[:, [0]])[:, 1:emb_size]
-    logits2 = (
-        test_logprobs
-        @ np.eye(vocab_size, emb_size)
-        @ tfm.alr_transform(emb_size)
-    )
-    np.testing.assert_allclose(
-        test_logprobs @ np.eye(vocab_size, emb_size),
-        test_logprobs[:, :emb_size],
-    )
-    np.testing.assert_allclose(
-        test_logprobs
-        @ (np.eye(vocab_size) - tfm.one_hot(vocab_size, 0)[:, None]),
-        test_logprobs - test_logprobs[:, [0]],
-    )
-    np.testing.assert_allclose(logits1, logits2)
-
-
 def test_ellipse_from_data():
     test_logprobs = model(stnd_test_data)
     from_data = tfm.Ellipse.from_data(
         test_logprobs, emb_size=emb_size, verbose=False
     )
-    down_proj = tfm.alr_transform(vocab_size)[:, :emb_size-1]
-    from_model = model.ellipse(down_proj=down_proj)
-    np.testing.assert_allclose(from_data.up_proj @ down_proj, np.eye(emb_size - 1), atol=1e-10)
-    np.testing.assert_allclose(from_model.up_proj @ down_proj, np.eye(emb_size - 1), atol=1e-10)
+    from_model = model.ellipse()
     np.testing.assert_allclose(from_data.bias, from_model.bias)
-    np.testing.assert_allclose(from_data.up_proj, from_model.up_proj)
+    np.testing.assert_allclose(from_data.up_proj, from_model.up_proj, atol=1e-10)
     np.testing.assert_allclose(from_data.stretch, from_model.stretch)
     np.testing.assert_allclose(from_data.rot2, from_model.rot2)
 

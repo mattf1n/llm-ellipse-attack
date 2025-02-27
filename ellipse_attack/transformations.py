@@ -1,6 +1,6 @@
-import functools as ft
+import functools as ft, sys
 from dataclasses import dataclass
-import numpy as np
+import numpy as np, scipy
 from jaxtyping import Num, Array
 from ellipse_attack.get_ellipse import get_ellipse
 
@@ -16,7 +16,7 @@ class Ellipse:
     def __call__(self, sphere: Num[Array, "emb"]):
         emb_size = self.stretch.shape[0] + 1
         rot1 = np.eye(emb_size - 1) if self.rot1 is None else self.rot1
-        return (
+        return alrinv(
             sphere
             @ isom(emb_size)
             @ rot1
@@ -31,14 +31,18 @@ class Ellipse:
         cls, logprobs: Num[Array, "sample vocab"], emb_size: int, **kwargs
     ):
         vocab_size = logprobs.shape[1]
-        down_proj = alr_transform(vocab_size)[:, :emb_size-1]
-        logits = (logprobs - logprobs[0]) @ down_proj
-        up_proj = np.linalg.pinv(logits) @ (logprobs - logprobs[0])
-        np.testing.assert_allclose(logits @ up_proj + logprobs[0], logprobs)
-        _, stretch, rot2, bias = get_ellipse(logits, **kwargs)
+        print("Computing ALR", file=sys.stderr)
+        alr_logits = alr(logprobs)
+        down_proj = np.eye(vocab_size - 1, emb_size - 1)
+        unbiased_alr_logits = alr_logits - alr_logits[0]
+        full_rank_ellipse = unbiased_alr_logits @ down_proj
+        print("Computing up-projection", file=sys.stderr)
+        up_proj = np.linalg.pinv(full_rank_ellipse[:emb_size * 2]) @ unbiased_alr_logits[:emb_size * 2]
+        print("Computing ellipse", file=sys.stderr)
+        _, stretch, rot2, bias = get_ellipse(full_rank_ellipse, **kwargs)
         return cls(
             up_proj=up_proj,
-            bias=bias @ up_proj + logprobs[0],
+            bias=bias @ up_proj + alr_logits[0],
             rot1=None,
             stretch=stretch,
             rot2=rot2,
@@ -52,22 +56,24 @@ class Model:
     unembed: Num[Array, "emb vocab"]
 
     def __call__(self, sphere):
-        return (sphere * self.stretch + self.bias) @ self.unembed @ center(self.unembed.shape[1])
+        return scipy.special.log_softmax(
+            (sphere * self.stretch + self.bias) @ self.unembed, axis=-1
+        )
 
-    def ellipse(self, down_proj=None):
+    def ellipse(self):
         emb_size, vocab_size = self.unembed.shape
-        linear = np.diag(self.stretch) @ self.unembed @ center(vocab_size)
-        if down_proj is None:
-            down_proj = np.eye(vocab_size, emb_size - 1)
-        std_ctr = center(emb_size) @ linear @ center(vocab_size)
-        up_proj = np.linalg.pinv(std_ctr @ down_proj) @ std_ctr
+        logits_to_alr = center(vocab_size) @ ctr_to_alr(vocab_size)
+        linear = np.diag(self.stretch) @ self.unembed @ logits_to_alr
+        down_proj = np.eye(vocab_size - 1, emb_size - 1)
+        out_basis = center(emb_size) @ linear
+        up_proj = np.linalg.pinv(out_basis @ down_proj) @ out_basis
         rot1, stretch, rot2 = np.linalg.svd(
             isom_inv(emb_size) @ linear @ down_proj, full_matrices=False
         )
         # Ensure leading entries of rot2 are always positive
         signs = (rot2[:, [0]] >= 0) * 2 - 1
         rot1, rot2 = signs.T * rot1, signs * rot2
-        bias = self.bias @ self.unembed @ center(vocab_size)
+        bias = self.bias @ self.unembed @ logits_to_alr
         return Ellipse(
             up_proj=up_proj,
             bias=bias,
@@ -75,6 +81,12 @@ class Model:
             stretch=stretch,
             rot2=rot2,
         )
+
+
+def ctr_to_alr(n: int) -> Num[Array, "N N-1"]:
+    return np.linalg.pinv(center(n)) @ alr(
+        scipy.special.log_softmax(center(n), axis=-1)
+    )
 
 
 def standardize(x: Num[Array, "... N"]) -> Num[Array, "... N"]:
@@ -113,9 +125,13 @@ def one_hot(size, n):
     return np.arange(size) == n
 
 
-def alr_transform(size):
-    """ALR transform: subtract first logprob, drop first logprob"""
-    return (np.eye(size) - one_hot(size, 0).reshape(-1, 1))[:, 1:]
+def alr(x: Num[Array, "... N"]) -> Num[Array, "... N-1"]:
+    return x[..., 1:] - x[..., [0]]
+
+
+def alrinv(x: Num[Array, "... N"]) -> Num[Array, "... N+1"]:
+    y0 = -scipy.special.logsumexp(x, axis=-1, keepdims=True)
+    return np.concatenate([y0, x + y0], axis=-1)
 
 
 def isom(n: int):
@@ -123,10 +139,8 @@ def isom(n: int):
 
 
 def center(n: int):
-    return np.eye(n) - np.ones(n) / n
+    return np.eye(n) - 1 / n
 
 
 def isom_inv(n: int):
     return np.linalg.pinv(center(n) @ isom(n)) @ center(n)
-
-

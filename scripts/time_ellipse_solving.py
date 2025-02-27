@@ -24,6 +24,7 @@ for sample_size in (
     start = time.time()
     ellipse = Ellipse.from_data(logprobs, hidden_size, verbose=True)
     seconds = time.time() - start
+    print(f"Took {seconds} seconds")
     outfile = "data/narrow_band_times.dat" if narrow_band else "data/times.dat"
     with open(outfile, "a") as times:
         print(sample_size, seconds, file=times)
