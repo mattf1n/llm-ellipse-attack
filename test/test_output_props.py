@@ -1,21 +1,15 @@
 import scipy
 import numpy as np
+import ellipse_attack.transformations as tfm
 
-# def test_rank_of_logits():
-#     outputs = np.load("data/single_token_prompts/outputs.npz")
-#     true_rank = outputs["hidden"].shape[1]
-#     assert np.linalg.matrix_rank(outputs["logits"]) == true_rank
-#     logprobs = scipy.special.log_softmax(outputs["logits"], axis=-1)
-#     assert np.linalg.matrix_rank(logprobs) == true_rank
-#     assert np.linalg.matrix_rank(logprobs - logprobs[0]) == true_rank - 1
 
-def test_rank_of_logprobs():
-    rank = np.linalg.matrix_rank(logprobs)
-    assert rank == true_rank, f"{rank}, {true_rank}"
+def test_logprob_recoverability():
+    vocab_size = logprobs.shape[1]
+    down_proj = tfm.alr_transform(vocab_size)[:, :emb_size-1]
+    logits = (logprobs - logprobs[0]) @ down_proj
+    up_proj = np.linalg.pinv(logits) @ (logprobs - logprobs[0])
+    np.testing.assert_allclose(logits @ up_proj + logprobs[0], logprobs)
 
-def test_rank_of_unbiased_logprobs():
-    rank = np.linalg.matrix_rank(logprobs - logprobs[0])
-    assert rank == true_rank - 1, f"{rank}, {true_rank-1}"
 
 true_rank = 64
-logprobs = np.load("data/single_token_prompts/logprobs.npy")[:pow(true_rank, 2)]
+logprobs = np.load("data/single_token_prompts/logprobs.npy")[:200]
