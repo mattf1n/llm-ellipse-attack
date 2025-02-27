@@ -6,12 +6,11 @@ from ellipse_attack.transformations import Ellipse
 narrow_band = "--filter" in sys.argv
 hidden_size = 64
 fname = (
-    "data/narrow_band_logits.npz"
+    "data/single_token_prompts/narrow_band_logprobs.npy"
     if narrow_band
-    else "data/vocab/model_params.npz"
+    else "data/single_token_prompts/logprobs.npy"
 )
-logits = np.load(fname)["logits"]
-logprobs = scipy.special.log_softmax(logits, axis=-1)
+logprobs = np.load(fname)
 
 ellipse_rank = hidden_size - 1
 
