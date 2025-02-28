@@ -3,19 +3,13 @@ import os, sys, re
 from glob import glob
 import numpy as np
 import pandas as pd
-from ellipse_attack.get_ellipse import get_transform, isometric_transform
+from ellipse_attack.transformations import Model, Ellipse
 
 narrow_band = "--filter" in sys.argv
 
-model_params = np.load("data/vocab/model_params.npz")
-W = model_params["W"]
-gamma = model_params["gamma"]
-beta = model_params["beta"]
-logits = model_params["logits"]
-hidden = model_params["hidden"]
-prenorm = model_params["prenorm"]
-
-model = Model(bias=beta, stretch=gamma, unembed=W)
+model_params = np.load("data/model/TinyStories-1M.npz")
+model = Model(**model_params)
+true_ellipse = model.ellipse()
 
 ellipses = []
 # samples_list = [5000, 10_000, 20_000, 30_000, None]
@@ -27,7 +21,7 @@ ellipse_pred_filenames = (
 for filename in ellipse_pred_filenames:
     # Load ellipse predictions
     params = np.load(filename)
-    ellipse = Ellipse(up_proj=..., stretch=params["S_pred"], bias=params["bias_pred"], rot2=params["U_pred"], rot1=None)
+    ellipse = Ellipse(**params)
     ellipses.append(ellipse)
 
 sample_size_extractor = (

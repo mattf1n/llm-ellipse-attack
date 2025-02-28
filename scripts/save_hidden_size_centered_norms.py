@@ -73,7 +73,7 @@ def main(dataset="single_token_prompts"):
     save_values_to_file("dist2_norms.dat", norms[test_tokens][~predictions])
 
     is_dist1 = entropy_gm.predict_proba(all_entropies.reshape(-1, 1))[:,0] > 0.90
-    np.savez("data/narrow_band_logits.npz", logits=data["logits"][is_dist1])
+    np.savez("data/single_token_prompts/narrow_band_logits.npz", logits=data["logits"][is_dist1])
 
 
 if __name__ == "__main__":

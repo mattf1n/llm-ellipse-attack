@@ -1,4 +1,5 @@
 import itertools as it, sys, time
+from dataclasses import asdict
 import numpy as np
 import scipy
 from ellipse_attack.transformations import Ellipse
@@ -16,12 +17,12 @@ ellipse_rank = hidden_size - 1
 
 sample_sizes = [5000, 10_000, 20_000, 30_000, 100_000]
 for sample_size in (
-    *it.takewhile(lambda n: n <= logits.shape[0], sample_sizes),
+    *it.takewhile(lambda n: n <= logprobs.shape[0], sample_sizes),
     None,
 ):
     print(f"Sample size {sample_size}")
     start = time.time()
-    ellipse = Ellipse.from_data(logprobs, hidden_size, verbose=True)
+    ellipse = Ellipse.from_data(logprobs[:sample_size], hidden_size, verbose=True)
     seconds = time.time() - start
     print(f"Took {seconds} seconds")
     outfile = "data/narrow_band_times.dat" if narrow_band else "data/times.dat"
@@ -32,4 +33,4 @@ for sample_size in (
         if narrow_band
         else f"data/ellipse_pred_{sample_size}_samples.npz"
     )
-    np.savez(npz_file, **ellipse)
+    np.savez(npz_file, asdict(ellipse))
