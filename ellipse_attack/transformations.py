@@ -1,6 +1,7 @@
 import functools as ft, sys
 from dataclasses import dataclass
-import numpy as np, scipy
+import numpy as np
+from scipy.special import log_softmax, logsumexp
 from jaxtyping import Num, Array
 from ellipse_attack.get_ellipse import get_ellipse
 
@@ -37,7 +38,10 @@ class Ellipse:
         unbiased_alr_logits = alr_logits - alr_logits[0]
         full_rank_ellipse = unbiased_alr_logits @ down_proj
         print("Computing up-projection", file=sys.stderr)
-        up_proj = np.linalg.pinv(full_rank_ellipse[:emb_size * 2]) @ unbiased_alr_logits[:emb_size * 2]
+        up_proj = (
+            np.linalg.pinv(full_rank_ellipse[: emb_size * 2])
+            @ unbiased_alr_logits[: emb_size * 2]
+        )
         print("Computing ellipse", file=sys.stderr)
         _, stretch, rot2, bias = get_ellipse(full_rank_ellipse, **kwargs)
         return cls(
@@ -56,14 +60,14 @@ class Model:
     unembed: Num[Array, "emb vocab"]
 
     def __call__(self, sphere):
-        return scipy.special.log_softmax(
+        return log_softmax(
             (sphere * self.stretch + self.bias) @ self.unembed, axis=-1
         )
 
     def ellipse(self):
         emb_size, vocab_size = self.unembed.shape
-        logits_to_alr = center(vocab_size) @ ctr_to_alr(vocab_size)
-        linear = np.diag(self.stretch) @ self.unembed @ logits_to_alr
+        # TODO Too expensive
+        linear = alr(log_softmax(np.diag(self.stretch) @ self.unembed, axis=-1))
         down_proj = np.eye(vocab_size - 1, emb_size - 1)
         out_basis = center(emb_size) @ linear
         up_proj = np.linalg.pinv(out_basis @ down_proj) @ out_basis
@@ -73,7 +77,7 @@ class Model:
         # Ensure leading entries of rot2 are always positive
         signs = (rot2[:, [0]] >= 0) * 2 - 1
         rot1, rot2 = signs.T * rot1, signs * rot2
-        bias = self.bias @ self.unembed @ logits_to_alr
+        bias = alr(log_softmax(self.bias @ self.unembed, axis=-1))
         return Ellipse(
             up_proj=up_proj,
             bias=bias,
@@ -85,7 +89,7 @@ class Model:
 
 def ctr_to_alr(n: int) -> Num[Array, "N N-1"]:
     return np.linalg.pinv(center(n)) @ alr(
-        scipy.special.log_softmax(center(n), axis=-1)
+        log_softmax(center(n), axis=-1)
     )
 
 
@@ -130,7 +134,7 @@ def alr(x: Num[Array, "... N"]) -> Num[Array, "... N-1"]:
 
 
 def alrinv(x: Num[Array, "... N"]) -> Num[Array, "... N+1"]:
-    y0 = -scipy.special.logsumexp(x, axis=-1, keepdims=True)
+    y0 = -logsumexp(x, axis=-1, keepdims=True)
     return np.concatenate([y0, x + y0], axis=-1)
 
 

@@ -33,4 +33,4 @@ for sample_size in (
         if narrow_band
         else f"data/ellipse_pred_{sample_size}_samples.npz"
     )
-    np.savez(npz_file, asdict(ellipse))
+    np.savez(npz_file, **asdict(ellipse))
