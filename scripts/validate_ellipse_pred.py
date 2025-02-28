@@ -20,7 +20,7 @@ ellipse_pred_filenames = (
 )
 for filename in ellipse_pred_filenames:
     # Load ellipse predictions
-    params = np.load(filename)["arr_0"]
+    params = {key: val for key, val in np.load(filename).items() if key != "time"}
     ellipse = Ellipse(**params)
     ellipses.append(ellipse)
 
