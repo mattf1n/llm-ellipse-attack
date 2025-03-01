@@ -6,28 +6,22 @@ from ellipse_attack.transformations import Ellipse
 import fire
 
 
-def main(sample_size: int, narrow_band: bool = False):
+def main(sample_size: int, infile, outfile, narrow_band: bool = False, wide_band: bool = False, down_proj=None):
     hidden_size = 64
-    fname = (
-        "data/single_token_prompts/narrow_band_logprobs.npy"
-        if narrow_band
-        else "data/single_token_prompts/logprobs.npy"
-    )
-    logprobs = np.load(fname)
+    logprobs = np.load(infile)
 
     ellipse_rank = hidden_size - 1
 
     print(f"Sample size {sample_size}")
     start = time.time()
-    ellipse = Ellipse.from_data(logprobs[:sample_size], hidden_size, verbose=True)
+    if down_proj is not None:
+        down_proj = np.load(down_proj)
+    ellipse = Ellipse.from_data(
+            logprobs[:sample_size], hidden_size, down_proj=down_proj, verbose=True
+            )
     seconds = time.time() - start
     print(f"Took {seconds} seconds")
-    npz_file = (
-        f"data/narrow_band_ellipse_pred_{sample_size}_samples.npz"
-        if narrow_band
-        else f"data/ellipse_pred_{sample_size}_samples.npz"
-    )
-    np.savez(npz_file, **asdict(ellipse), time=seconds)
+    np.savez(outfile, **asdict(ellipse), time=seconds, down_proj=down_proj)
 
 if __name__ == "__main__":
     fire.Fire(main)

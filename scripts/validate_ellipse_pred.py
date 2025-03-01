@@ -3,69 +3,102 @@ import os, sys, re
 from glob import glob
 import numpy as np
 import pandas as pd
+import fire
 from ellipse_attack.transformations import Model, Ellipse
 
-narrow_band = "--filter" in sys.argv
 
-model_params = np.load("data/model/TinyStories-1M.npz")
-model = Model(**model_params)
-true_ellipse = model.ellipse()
 
-ellipses = []
-# samples_list = [5000, 10_000, 20_000, 30_000, None]
-ellipse_pred_filenames = (
-    glob("data/narrow_band_ellipse_pred_*_samples.npz")
-    if narrow_band
-    else glob("data/ellipse_pred_*_samples.npz")
-)
-for filename in ellipse_pred_filenames:
-    # Load ellipse predictions
-    params = {key: val for key, val in np.load(filename).items() if key != "time"}
-    ellipse = Ellipse(**params)
-    ellipses.append(ellipse)
+def main(*fnames, narrow_band: bool = False):
+    model_params = np.load("data/model/TinyStories-1M.npz")
+    model = Model(**model_params)
 
-sample_size_extractor = (
-    lambda x: re.compile("data/(narrow_band_)?ellipse_pred_(.*)_samples.npz")
-    .match(x)
-    .group(2)
-)
-data = {
-    ("Samples", None): [
-        sample_size_extractor(fname) for fname in ellipse_pred_filenames
-    ],
-    ("RMS", "rot"): [
-        np.sqrt(np.mean(np.square(ellipse.rot2 - true_ellipse.rot2)))
-        for ellipse in ellipses
-    ],
-    ("RMS", "stretch"): [
-        np.sqrt(np.mean(np.square(ellipse.stretch - true_ellipse.stretch)))
-        for ellipse in ellipses
-    ],
-    ("RMS", "bias"): [
-        np.sqrt(np.mean(np.square(ellipse.bias - true_ellipse.bias)))
-        for ellipse in ellipses
-    ],
-    ("Max rel. diff.", "rot"): [
-        np.max(np.abs(ellipse.rot2 - true_ellipse.rot2))
-        for ellipse in ellipses
-    ],
-    ("Max rel. diff.", "S"): [
-        np.max(np.abs(ellipse.stretch - true_ellipse.stretch))
-        for ellipse in ellipses
-    ],
-    ("Max rel. diff.", "bias"): [
-        np.max(np.abs(ellipse.bias - true_ellipse.bias))
-        for ellipse in ellipses
-    ],
-}
-output_filename = (
-    "overleaf/tab/narrow_band_errors.tex"
-    if narrow_band
-    else "overleaf/tab/errors.tex"
-)
-for key, value in data.items():
-    print(key, len(value))
-pd.DataFrame(data, columns=pd.MultiIndex.from_tuples(data.keys())).to_pickle(
-    "data/narrow_band_error_data.pkl" if narrow_band else "data/error_data.pkl"
-)
-# .format(precision=4).to_latex(output_filename)
+    ellipses = []
+    for filename in fnames:
+        # Load ellipse predictions
+        params = np.load(filename, allow_pickle=True)
+        down_proj = params["down_proj"]
+        ellipse = Ellipse(
+                up_proj=params["up_proj"],
+                bias=params["bias"],
+                rot1=params["rot1"],
+                stretch=params["stretch"],
+                rot2=params["rot2"],
+                )
+        true_ellipse = model.ellipse(down_proj=down_proj if None not in down_proj else None)
+        ellipses.append((ellipse, true_ellipse))
+
+    sample_size_extractor = (
+        lambda x: re.compile("data/(.*)?ellipse_pred_(.*)_samples(.*).npz")
+        .match(x)
+        .group(2)
+    )
+    param_names = ("stretch", "rot2", "bias")
+    data = {
+            ("fnames", None): list(map(os.path.basename, fnames)),
+            ("Samples", None): [
+                sample_size_extractor(fname) for fname in fnames
+                ],
+            ("Angle", "rot2"): [
+                np.rad2deg(np.arccos((np.trace(ellipse.rot2.T @ true_ellipse.rot2) - 1) / 2))
+                for ellipse, true_ellipse in ellipses
+                ],
+            **{
+                ("RMS", param): [
+                    np.sqrt(np.mean(np.square(getattr(ellipse, param) - getattr(true_ellipse, param))))
+                    for ellipse, true_ellipse in ellipses
+                    ]
+                for param in param_names
+                },
+            **{
+                ("Max diff.", param): [
+                    np.max(np.abs(getattr(ellipse, param) - getattr(true_ellipse, param)))
+                    for ellipse, true_ellipse in ellipses
+                    ]
+                for param in param_names
+                },
+            **{
+                ("Mean diff.", param): [
+                    np.mean(np.abs(getattr(ellipse, param) - getattr(true_ellipse, param)))
+                    for ellipse, true_ellipse in ellipses
+                    ]
+                for param in ("stretch", "rot2", "bias")
+                },
+            **{
+                ("Mean rel. diff.", param): [
+                    np.mean(
+                        np.abs(
+                            (getattr(ellipse, param) - getattr(true_ellipse, param))
+                            / getattr(true_ellipse, param)
+                            ) 
+                        )
+                    for ellipse, true_ellipse in ellipses
+                    ]
+                for param in param_names
+                },
+            **{
+                ("Max rel. diff.", param): [
+                    np.max(
+                        np.abs(
+                            (getattr(ellipse, param) - getattr(true_ellipse, param))
+                            / getattr(true_ellipse, param)
+                            ) 
+                        )
+                    for ellipse, true_ellipse in ellipses
+                    ]
+                for param in param_names
+                },
+            }
+    output_filename = (
+        "overleaf/tab/narrow_band_errors.tex"
+        if narrow_band
+        else "overleaf/tab/errors.tex"
+    )
+    df = pd.DataFrame(data, columns=pd.MultiIndex.from_tuples(data.keys()))
+    print(df.T)
+    df.to_pickle(
+        "data/narrow_band_error_data.pkl" if narrow_band else "data/error_data.pkl"
+    )
+    # .format(precision=4).to_latex(output_filename)
+
+if __name__ == "__main__":
+    fire.Fire(main)

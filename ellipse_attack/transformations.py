@@ -29,12 +29,14 @@ class Ellipse:
 
     @classmethod
     def from_data(
-        cls, logprobs: Num[Array, "sample vocab"], emb_size: int, **kwargs
+        cls, logprobs: Num[Array, "sample vocab"], emb_size: int,
+        down_proj: None | Num[Array, "vocab-1 emb-1"] = None, **kwargs
     ):
         vocab_size = logprobs.shape[1]
         print("Computing ALR", file=sys.stderr)
         alr_logits = alr(logprobs)
-        down_proj = np.eye(vocab_size - 1, emb_size - 1)
+        if down_proj is None:
+            down_proj = np.eye(vocab_size - 1, emb_size - 1)
         unbiased_alr_logits = alr_logits - alr_logits[0]
         full_rank_ellipse = unbiased_alr_logits @ down_proj
         print("Computing up-projection", file=sys.stderr)
@@ -64,11 +66,11 @@ class Model:
             (sphere * self.stretch + self.bias) @ self.unembed, axis=-1
         )
 
-    def ellipse(self):
+    def ellipse(self, down_proj=None):
         emb_size, vocab_size = self.unembed.shape
-        # TODO Too expensive
         linear = alr(log_softmax(np.diag(self.stretch) @ self.unembed, axis=-1))
-        down_proj = np.eye(vocab_size - 1, emb_size - 1)
+        if down_proj is None:
+            down_proj = np.eye(vocab_size - 1, emb_size - 1)
         out_basis = center(emb_size) @ linear
         up_proj = np.linalg.pinv(out_basis @ down_proj) @ out_basis
         rot1, stretch, rot2 = np.linalg.svd(

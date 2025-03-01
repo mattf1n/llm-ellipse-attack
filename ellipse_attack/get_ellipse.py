@@ -19,8 +19,15 @@ def get_ellipse(x, **kwargs):
     bias = -np.linalg.inv(A) @ b
     r_squared = np.abs(bias @ A @ bias - dee)
     C = A / r_squared
+    Cinv = np.linalg.inv(C)
 
-    linear = np.linalg.cholesky(np.linalg.inv(C)).T
+    try:
+        linear = np.linalg.cholesky(Cinv).T
+    except np.linalg.LinAlgError as e:
+        print(C)
+        print(Cinv)
+        print(Cinv.min())
+        raise e
     Vh, S, U_ = np.linalg.svd(linear)
     U = np.diag((U_[:, 0] > 0) * 2 - 1) @ U_
     return C, S, U, bias
