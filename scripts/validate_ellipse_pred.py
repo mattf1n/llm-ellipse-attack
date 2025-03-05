@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import fire
 from ellipse_attack.transformations import Model, Ellipse
+import ellipse_attack.metrics as metrics
 
 
 
@@ -27,11 +28,13 @@ def main(*fnames, narrow_band: bool = False):
         true_ellipse = model.ellipse(down_proj=down_proj if None not in down_proj else None)
         ellipses.append((ellipse, true_ellipse))
 
-    sample_size_extractor = (
-        lambda x: re.compile("data/(.*)?ellipse_pred_(.*)_samples(.*).npz")
-        .match(x)
-        .group(2)
-    )
+    def sample_size_extractor(fname):
+        size = re.match("data/(.*)?ellipse_pred_(?P<size>\d+)_samples(.*).npz", fname)
+        if not size:
+            return re.match("data/pile-uncopyrighted/ellipse_pred/(?P<size>\d+)_samples.npz", fname).group("size")
+        else:
+            return size.group("size")
+
     param_names = ("stretch", "rot2", "bias")
     data = {
             ("fnames", None): list(map(os.path.basename, fnames)),
@@ -39,7 +42,7 @@ def main(*fnames, narrow_band: bool = False):
                 sample_size_extractor(fname) for fname in fnames
                 ],
             ("Angle", "rot2"): [
-                np.rad2deg(np.arccos((np.trace(ellipse.rot2.T @ true_ellipse.rot2) - 1) / 2))
+                metrics.angle(ellipse.rot2, true_ellipse.rot2)
                 for ellipse, true_ellipse in ellipses
                 ],
             **{

@@ -54,6 +54,21 @@ class Ellipse:
             rot2=rot2,
         )
 
+    @classmethod
+    def from_npz(cls, fname):
+        params = np.load(fname)
+        return cls.from_dict(fname)
+
+    @classmethod
+    def from_dict(cls, params):
+        return cls(
+                up_proj=params["up_proj"],
+                bias=params["bias"],
+                rot1=params["rot1"],
+                stretch=params["stretch"],
+                rot2=params["rot2"],
+                )
+
 
 @dataclass
 class Model:

@@ -2,10 +2,22 @@ x sample from model
 x write test for rank of outputs
 x extract narrow band
 x look for errors in fit ellipse code
-- test rank of model outputs
-try running locally in case faster
+x test rank of model outputs
+x try running locally in case faster
+x fit ellipse
+x fit narrow band ellipse
+x randomize choice of prefixes
+x fit to narrow band data with more points
 
-exclude ink-titan from test
-fit ellipse
-fit narrow band ellipse
+- fit to data from natural text
+- compress logrob data to send to local
+interpret narrow band data from more points
+send logprobs to local
+x fit to narrow band data with more points
+plot solve times for different model sizes -- is the eigh data enough? Do I need MOSEK times?
+
+
+Find the NL ellipse error distribution for model outputs
+Map outputs from target model to the image of the source model
+Find the NL ellipse error distribution for other model outputs mapped to the model image
 

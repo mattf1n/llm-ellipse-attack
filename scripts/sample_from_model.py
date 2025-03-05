@@ -8,6 +8,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from datasets import load_dataset
 import fire
 from jaxtyping import Float, Array, Int
+from typing import Iterable
 
 from ellipse_attack.transformations import Model
 
@@ -24,20 +25,20 @@ def batched(iterable, n, strict=False):
 
 
 @torch.inference_mode()
-def inference(model, input_ids: Int[Array, "doc seq"], batch_size=1000):
+def inference(model, input_ids: Iterable[Iterable[int]], batch_size=1000):
     device = (
         "cuda"
         if torch.cuda.is_available()
         else "mps" if torch.backends.mps.is_available() else "cpu"
     )
-    model.to(device)
-    model.eval()
-    batches = batched(input_ids, batch_size)
+    batches: Iterable[tuple[tuple[int]]] = batched(input_ids, batch_size)
     logit_batches: list[Float[Array, "batch seq vocab"]] = []
     hidden_batches: list[Float[Array, "batch seq hidden"]] = []
     prenorm_batches: list[Float[Array, "batch seq hidden"]] = []
+    model.to(device)
+    model.eval()
     for batch in tqdm(batches, desc="Running inference"):
-        batch_tensor = torch.tensor(batch, device=device)[:, None]
+        batch_tensor: Num[Array, "batch seq"] = torch.tensor(batch, device=device)
         output = model(batch_tensor, output_hidden_states=True)
         logit_batches.append(output.logits.cpu().numpy())
         hidden_batches.append(output.hidden_states[-1].cpu().numpy())
@@ -66,7 +67,7 @@ def main(dataset=None, batch_size=1000):
     np.savez("data/model/TinyStories-1M.npz", **asdict(final_layer))
 
     if dataset is None:
-        input_ids = torch.arange(model.config.vocab_size)[:, None]
+        input_ids: Int[Array, "vocab 1"] = torch.arange(model.config.vocab_size)[:, None]
     else:
         data = load_dataset(dataset, streaming=True, trust_remote_code=True)["train"]
         tokenized = iter(data.map(tokenizer, input_columns="text"))
@@ -75,10 +76,12 @@ def main(dataset=None, batch_size=1000):
         )
         input_id_stream = it.chain.from_iterable(input_id_seqs)
         seq_len = 512
-        collated_seq_stream: Iterable[Float[Array, "seq_len"]] = batched(
+        collated_seq_stream: Iterable[tuple[int]] = batched(
             input_id_stream, seq_len, strict=True
         )
-        input_ids = it.islice((torch.tensor(seq) for seq in collated_seq_stream), 100)
+        test_sample = next(collated_seq_stream)
+        assert len(test_sample) == 512
+        input_ids: Iterable[tuple[int]] = it.islice(collated_seq_stream, 100)
     logits, hidden, prenorm = inference(model, input_ids, batch_size=batch_size)
     dirname = "single_token_prompts" if dataset is None else os.path.basename(dataset)
     os.makedirs(os.path.join("data", dirname), exist_ok=True)
