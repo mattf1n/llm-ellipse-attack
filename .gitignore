@@ -10,3 +10,5 @@ data
 *.log
 *.swp
 *.egg-info
+ellipse
+.ctags.d

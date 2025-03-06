@@ -35,6 +35,10 @@ def test_ellipse_of_model():
     ellipse = model.ellipse()
     np.testing.assert_allclose(ellipse(sphere_point), model(sphere_point))
 
+def test_ellipse_inv():
+    ellipse = model.ellipse()
+    logprob = ellipse(sphere_point)
+    np.testing.assert_allclose(ellipse.inv(logprob), sphere_point)
 
 def test_ellipse_of_model_linear_term():
     ellipse = model.ellipse()

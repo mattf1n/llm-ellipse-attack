@@ -18,12 +18,11 @@ Let's begin by plotting the errors from model outputs.
 """
 
 import numpy as np
-import gnuplotlib as gp
+import matplotlib.pyplot as plt
 from ellipse_attack.transformations import Ellipse, alr
 
-
 ellipse = Ellipse.from_npz("data/pile-uncopyrighted/ellipse_pred/20000_samples.npz")
-logprobs = np.load("data/pile-uncopyrighted/logprobs.npy")
-logits = alr(data)
-errors = ellipse.error(logits)
+logprobs = np.load("data/pile-uncopyrighted/logprobs_decompressed.npy")[20000:21000]
+errors = ellipse.error(logprobs)
 plt.hist(errors)
+plt.show()

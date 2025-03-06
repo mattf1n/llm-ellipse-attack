@@ -8,18 +8,19 @@ from ellipse_attack.get_ellipse import get_ellipse
 
 @dataclass
 class Ellipse:
-    up_proj: Num[Array, "emb-1 vocab"]
-    bias: Num[Array, "vocab"]
+    up_proj: Num[Array, "emb-1 vocab-1"]
+    bias: Num[Array, "vocab-1"]
     rot1: None | Num[Array, "emb-1 emb-1"]
     stretch: Num[Array, "emb-1"]
     rot2: Num[Array, "emb-1 emb-1"]
 
-    def __call__(self, sphere: Num[Array, "emb"]):
-        emb_size = self.stretch.shape[0] + 1
-        rot1 = np.eye(emb_size - 1) if self.rot1 is None else self.rot1
+    def __call__(
+        self, sphere: Num[Array, "... emb"]
+    ) -> Num[Array, "... vocab"]:
+        rot1 = np.eye(self.emb_size - 1) if self.rot1 is None else self.rot1
         return alrinv(
             sphere
-            @ isom(emb_size)
+            @ isom(self.emb_size)
             @ rot1
             @ np.diag(self.stretch)
             @ self.rot2
@@ -27,10 +28,24 @@ class Ellipse:
             + self.bias
         )
 
+    def inv(self, logprobs: Num[Array, "... vocab"]) -> Num[Array, "... emb"]:
+        rot1 = np.eye(self.emb_size - 1) if self.rot1 is None else self.rot1
+        return (
+            (alr(logprobs) - self.bias)
+            @ np.linalg.pinv(self.up_proj)
+            @ np.linalg.inv(self.rot2)
+            @ np.linalg.inv(np.diag(self.stretch))
+            @ np.linalg.inv(rot1)
+            @ isom_inv(self.emb_size)
+        )
+
     @classmethod
     def from_data(
-        cls, logprobs: Num[Array, "sample vocab"], emb_size: int,
-        down_proj: None | Num[Array, "vocab-1 emb-1"] = None, **kwargs
+        cls,
+        logprobs: Num[Array, "sample vocab"],
+        emb_size: int,
+        down_proj: None | Num[Array, "vocab-1 emb-1"] = None,
+        **kwargs
     ):
         vocab_size = logprobs.shape[1]
         print("Computing ALR", file=sys.stderr)
@@ -56,18 +71,27 @@ class Ellipse:
 
     @classmethod
     def from_npz(cls, fname):
-        params = np.load(fname)
-        return cls.from_dict(fname)
+        params = np.load(fname, allow_pickle=True)
+        return cls.from_dict(params)
 
     @classmethod
     def from_dict(cls, params):
+        rot1 = None if params["rot1"] == np.array(None) else params["rot1"]
         return cls(
-                up_proj=params["up_proj"],
-                bias=params["bias"],
-                rot1=params["rot1"],
-                stretch=params["stretch"],
-                rot2=params["rot2"],
-                )
+            up_proj=params["up_proj"],
+            bias=params["bias"],
+            rot1=rot1,
+            stretch=params["stretch"],
+            rot2=params["rot2"],
+        )
+
+    def error(self, logprobs: Num[Array, "... vocab"]) -> Num[Array, "..."]:
+        sphere_points = self.inv(logprobs)
+        return np.linalg.norm(sphere_points, axis=-1) - np.sqrt(self.emb_size)
+
+    @property
+    def emb_size(self):
+        return len(self.stretch) + 1
 
 
 @dataclass
@@ -105,9 +129,7 @@ class Model:
 
 
 def ctr_to_alr(n: int) -> Num[Array, "N N-1"]:
-    return np.linalg.pinv(center(n)) @ alr(
-        log_softmax(center(n), axis=-1)
-    )
+    return np.linalg.pinv(center(n)) @ alr(log_softmax(center(n), axis=-1))
 
 
 def standardize(x: Num[Array, "... N"]) -> Num[Array, "... N"]:

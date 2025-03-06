@@ -38,38 +38,38 @@ def inference(model, input_ids: Iterable[Iterable[int]], batch_size=1000):
     model.to(device)
     model.eval()
     for batch in tqdm(batches, desc="Running inference"):
-        batch_tensor: Num[Array, "batch seq"] = torch.tensor(batch, device=device)
+        batch_tensor: Num[Array, "batch seq"] = torch.tensor(
+            batch, device=device
+        )
         output = model(batch_tensor, output_hidden_states=True)
         logit_batches.append(output.logits.cpu().numpy())
         hidden_batches.append(output.hidden_states[-1].cpu().numpy())
         prenorm_batches.append(output.hidden_states[-2].cpu().numpy())
-    logits: Float[Array, "doc*seq vocab"] = np.vstack(logit_batches).reshape(-1, model.config.vocab_size)
+    logits: Float[Array, "doc*seq vocab"] = np.vstack(logit_batches).reshape(
+        -1, model.config.vocab_size
+    )
     hiddens: Float[Array, "doc*seq hidden"] = np.vstack(hidden_batches).reshape(
         -1, model.config.hidden_size
     )
-    prenorms: Float[Array, "doc*seq hidden"] = np.vstack(prenorm_batches).reshape(
-        -1, model.config.hidden_size
-    )
+    prenorms: Float[Array, "doc*seq hidden"] = np.vstack(
+        prenorm_batches
+    ).reshape(-1, model.config.hidden_size)
     return logits, hiddens, prenorms
 
 
 @torch.inference_mode()
-def main(dataset=None, batch_size=1000):
-    tokenizer = AutoTokenizer.from_pretrained("roneneldan/TinyStories-1M")
-    model = AutoModelForCausalLM.from_pretrained("roneneldan/TinyStories-1M")
-
-    # Get and save model params
-    W = model.lm_head.weight.cpu().numpy().T
-    gamma = model.transformer.ln_f.weight.cpu().numpy()
-    beta = model.transformer.ln_f.bias.cpu().numpy()
-    final_layer = Model(stretch=gamma, bias=beta, unembed=W)
-    os.makedirs("data/model", exist_ok=True)
-    np.savez("data/model/TinyStories-1M.npz", **asdict(final_layer))
+def main(dataset=None, batch_size=1000, model_name="roneneldan/TinyStories-1M"):
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForCausalLM.from_pretrained(model_name)
 
     if dataset is None:
-        input_ids: Int[Array, "vocab 1"] = torch.arange(model.config.vocab_size)[:, None]
+        input_ids: Int[Array, "vocab 1"] = torch.arange(
+            model.config.vocab_size
+        )[:, None]
     else:
-        data = load_dataset(dataset, streaming=True, trust_remote_code=True)["train"]
+        data = load_dataset(dataset, streaming=True, trust_remote_code=True)[
+            "train"
+        ]
         tokenized = iter(data.map(tokenizer, input_columns="text"))
         input_id_seqs: Iterable[list[int]] = map(
             op.itemgetter("input_ids"), tokenized
@@ -83,7 +83,8 @@ def main(dataset=None, batch_size=1000):
         assert len(test_sample) == 512
         input_ids: Iterable[tuple[int]] = it.islice(collated_seq_stream, 100)
     logits, hidden, prenorm = inference(model, input_ids, batch_size=batch_size)
-    dirname = "single_token_prompts" if dataset is None else os.path.basename(dataset)
+    datasetname = "single_token_prompts" if dataset is None else os.path.basename(dataset)
+    dirname = os.path.join(datasetname, os.path.basename(model_name))
     os.makedirs(os.path.join("data", dirname), exist_ok=True)
     np.savez(
         f"data/{dirname}/outputs.npz",
