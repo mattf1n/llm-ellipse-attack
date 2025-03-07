@@ -1,4 +1,4 @@
-all: data/error.txt
+all: data/error.txt data/pile-uncopyrighted/TinyStories-3M/outputs.npz
 
 clean:
 	rm data/ellipse_pred_5000_samples.npz \
@@ -11,8 +11,11 @@ clean:
 data/single_token_prompts/outputs.npz: 
 	python scripts/sample_from_model.py
 
-data/pile-uncopyrighted/outputs.npz: scripts/sample_from_model.py
+data/pile-uncopyrighted/outputs.npz: 
 	python scripts/sample_from_model.py --dataset=monology/pile-uncopyrighted --batch-size=100
+
+data/pile-uncopyrighted/TinyStories-3M/outputs.npz:
+	python scripts/sample_from_model.py --dataset=monology/pile-uncopyrighted --batch-size=10 --model-name=roneneldan/TinyStories-3M
 
 
 # Computing logprobs
