@@ -2,7 +2,7 @@ import functools as ft, sys
 from dataclasses import dataclass
 import numpy as np
 from scipy.special import log_softmax, logsumexp
-from jaxtyping import Num, Array
+from jaxtyping import Num, Array, Float, Int
 from ellipse_attack.get_ellipse import get_ellipse
 
 
@@ -187,3 +187,9 @@ def center(n: int):
 
 def isom_inv(n: int):
     return np.linalg.pinv(center(n) @ isom(n)) @ center(n)
+
+def angle_error(ellipse: Ellipse, model: Model, logprobs: Float[Array, "... vocab"]):
+    ...
+
+def logprobs_of_hidden(model: Model, hidden: Float[Array, "... emb"]) -> Float[Array, "... vocab"]:
+    return log_softmax(hidden @ model.embed)

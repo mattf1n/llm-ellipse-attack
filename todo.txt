@@ -10,13 +10,20 @@ x randomize choice of prefixes
 x fit to narrow band data with more points
 x interpret narrow band data from more points
 x fit to data from natural text
+x save hidden_states instead of logits
+x compress logrob data to send to local
+x send logprobs to local
 
-- compress logrob data to send to local
-send logprobs to local
 plot solve times for different model sizes -- is the eigh data enough? Do I need MOSEK times?
 
-
 Find the NL ellipse error distribution for model outputs
+
+inverted points p
+true hidden points q
+minimize MSE(Rp, q)
+R is a rotation
+Baselines: random proj, recovered proj, recovered orthonormal proj.
+
 Map outputs from target model to the image of the source model
 Find the NL ellipse error distribution for other model outputs mapped to the model image
 

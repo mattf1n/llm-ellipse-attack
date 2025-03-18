@@ -11,25 +11,11 @@ clean:
 data/single_token_prompts/outputs.npz: 
 	python scripts/sample_from_model.py
 
-data/pile-uncopyrighted/outputs.npz: 
-	python scripts/sample_from_model.py --dataset=monology/pile-uncopyrighted --batch-size=100
+data/pile-uncopyrighted/TinyStories-1M/outputs.npz: 
+	python scripts/sample_from_model.py --dataset=monology/pile-uncopyrighted --batch-size=100 --samples=500_000
 
 data/pile-uncopyrighted/TinyStories-3M/outputs.npz:
 	python scripts/sample_from_model.py --dataset=monology/pile-uncopyrighted --batch-size=10 --model-name=roneneldan/TinyStories-3M
-
-
-# Computing logprobs
-
-data/single_token_prompts/logprobs.npy: \
-	scripts/logprobs_of_logits.py \
-	data/single_token_prompts/outputs.npz
-	python $< < data/single_token_prompts/outputs.npz > $@
-
-data/pile-uncopyrighted/logprobs.npy: \
-	scripts/logprobs_of_logits.py \
-	data/pile-uncopyrighted/outputs.npz
-	python $< < data/pile-uncopyrighted/outputs.npz > $@
-
 
 
 # Cannonical down-projection (first emb) varying sample size, randomizing samples.
@@ -57,17 +43,20 @@ $(random_sample_pred_fnames): data/ellipse_pred_%_samples_random_sample.npz: \
 		--seed=0
 
 
-nl_pred_fnames_ = $(addprefix data/pile-uncopyrighted/ellipse_pred/, $(sample_sizes))
+nl_sample_sizes = $(sample_sizes) 100000
+nl_pred_fnames_ = $(addprefix data/pile-uncopyrighted/ellipse_pred/, $(nl_sample_sizes))
 nl_pred_fnames = $(addsuffix _samples.npz, $(nl_pred_fnames_))
 
 $(nl_pred_fnames): data/pile-uncopyrighted/ellipse_pred/%_samples.npz: \
-	data/pile-uncopyrighted/logprobs.npy
+	data/pile-uncopyrighted/TinyStories-1M/outputs.npz
 	mkdir -p $(dir $@)
 	python scripts/time_ellipse_solving.py \
 		--infile=$< \
 		--outfile=$@ \
 		--sample-size=$* \
 		--down-proj=data/random_proj.npy
+
+
 
 clean_nl: 
 	rm $(nl_pred_fnames)

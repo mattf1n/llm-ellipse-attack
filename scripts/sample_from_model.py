@@ -32,7 +32,6 @@ def inference(model, input_ids: Iterable[Iterable[int]], batch_size=1000):
         else "mps" if torch.backends.mps.is_available() else "cpu"
     )
     batches: Iterable[tuple[tuple[int]]] = batched(input_ids, batch_size)
-    logit_batches: list[Float[Array, "batch seq vocab"]] = []
     hidden_batches: list[Float[Array, "batch seq hidden"]] = []
     prenorm_batches: list[Float[Array, "batch seq hidden"]] = []
     model.to(device)
@@ -42,23 +41,19 @@ def inference(model, input_ids: Iterable[Iterable[int]], batch_size=1000):
             batch, device=device
         )
         output = model(batch_tensor, output_hidden_states=True)
-        logit_batches.append(output.logits.cpu().numpy())
         hidden_batches.append(output.hidden_states[-1].cpu().numpy())
         prenorm_batches.append(output.hidden_states[-2].cpu().numpy())
-    logits: Float[Array, "doc*seq vocab"] = np.vstack(logit_batches).reshape(
-        -1, model.config.vocab_size
-    )
     hiddens: Float[Array, "doc*seq hidden"] = np.vstack(hidden_batches).reshape(
         -1, model.config.hidden_size
     )
     prenorms: Float[Array, "doc*seq hidden"] = np.vstack(
         prenorm_batches
     ).reshape(-1, model.config.hidden_size)
-    return logits, hiddens, prenorms
+    return hiddens, prenorms
 
 
 @torch.inference_mode()
-def main(dataset=None, batch_size=1000, model_name="roneneldan/TinyStories-1M"):
+def main(dataset=None, batch_size=1000, model_name="roneneldan/TinyStories-1M", samples=None):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForCausalLM.from_pretrained(model_name)
 
@@ -81,14 +76,14 @@ def main(dataset=None, batch_size=1000, model_name="roneneldan/TinyStories-1M"):
         )
         test_sample = next(collated_seq_stream)
         assert len(test_sample) == 512
-        input_ids: Iterable[tuple[int]] = it.islice(collated_seq_stream, 100)
-    logits, hidden, prenorm = inference(model, input_ids, batch_size=batch_size)
+        n_seqs = 100 if samples is None else samples // seq_len
+        input_ids: Iterable[tuple[int]] = it.islice(collated_seq_stream, n_seqs)
+    hidden, prenorm = inference(model, input_ids, batch_size=batch_size)
     datasetname = "single_token_prompts" if dataset is None else os.path.basename(dataset)
     dirname = os.path.join(datasetname, os.path.basename(model_name))
     os.makedirs(os.path.join("data", dirname), exist_ok=True)
     np.savez(
         f"data/{dirname}/outputs.npz",
-        logits=logits,
         hidden=hidden,
         prenorm=prenorm,
     )
