@@ -57,13 +57,11 @@ def main(p: int = 50):
     rho_k = 1.02
     mu_k = s_k = q_k = np.zeros(m)
     print(f"Getting eigendecomposition of K", file=sys.stderr)
-    start = time.time()
+    eigh_start = time.time()
     Lambda, U = np.linalg.eigh(K)
-    runtime = time.time() - start
-    print(f"{p} Took {runtime} seconds", file=sys.stderr)
-    return runtime
+    print(f"{p} Took {time.time() - eigh_start} seconds", file=sys.stderr)
     assert np.allclose(U @ np.diag(Lambda) @ U.T, K)
-    print(f"{D.shape=}, {K.shape=}, {Lambda.shape=}, {U.shape=}, {mu_k.shape=}")
+    print(f"{D.shape=}, {K.shape=}, {Lambda.shape=}, {U.shape=}, {mu_k.shape=}", file=sys.stderr)
     done = True
     while not done:
         q_kp1 = update_q(
@@ -86,9 +84,11 @@ def main(p: int = 50):
         s_k = s_kp1
         mu_k = mu_kp1
         beta_k = beta_kp1
+    runtime = time.time() - start
+    return runtime
 
 
 if __name__ == "__main__":
     # fire.Fire(main)
-    for p in [10, 20, 40, 80, 100, 120, 130, 140, 145, 150, 200][-1:]:
+    for p in [8, 16, 32, 48, 64, 80, 96, 112, 128]:
         print(p, main(p), flush=True)
